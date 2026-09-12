@@ -4,6 +4,8 @@
 
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:name=".BrainRotKillerApp"
@@ -36,13 +38,16 @@
             android:taskAffinity=""
             android:theme="@style/Theme.BrainRotKiller" />
 
-        <activity
-            android:name=".ui.gate.GateActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:launchMode="singleTask"
-            android:taskAffinity=""
-            android:theme="@style/Theme.BrainRotKiller" />
+        <receiver
+            android:name=".widget.ReelCounterWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/reel_widget_info" />
+        </receiver>
 
         <service
             android:name=".service.ReelBlockerAccessibilityService"

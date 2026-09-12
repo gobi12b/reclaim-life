@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.brainrotkiller.data.DEFAULT_DAILY_REEL_LIMIT
+import com.example.brainrotkiller.widget.refreshReelWidget
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -44,11 +45,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val daysExceededLimit: StateFlow<Int> = app.reelUsageRepository.daysExceededLimit
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
+    val trackingPaused: StateFlow<Boolean> = app.settingsRepository.trackingPaused
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     fun completeOnboarding(limit: Int, nickname: String) {
         viewModelScope.launch { app.settingsRepository.completeOnboarding(limit, nickname) }
     }
 
     fun updateDailyLimit(limit: Int) {
-        viewModelScope.launch { app.settingsRepository.setDailyReelLimit(limit) }
+        viewModelScope.launch {
+            app.settingsRepository.setDailyReelLimit(limit)
+            refreshReelWidget(app)
+        }
+    }
+
+    fun setTrackingPaused(paused: Boolean) {
+        viewModelScope.launch { app.settingsRepository.setTrackingPaused(paused) }
     }
 }

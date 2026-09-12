@@ -87,7 +87,9 @@ class BlockActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_DAILY_LIMIT = "daily_limit"
-        const val EXTRA_GRANT_AMOUNT = 2
+        const val FIRST_GRANT_AMOUNT = 10
+        const val GUILT_GRANT_AMOUNT = 2
+        const val WALK_GRANT_AMOUNT = 50
         const val WALK_TARGET_STEPS = 200
     }
 }
@@ -109,17 +111,17 @@ private fun BlockScreen(
     var stage by remember { mutableStateOf(Stage.BLOCKED) }
     val attemptsToday by app.reelUsageRepository.todayExtraAttempts.collectAsState(initial = 0)
 
-    fun grantAndContinue() {
+    fun grantAndContinue(amount: Int) {
         scope.launch {
-            app.reelUsageRepository.grantExtraAndGet(BlockActivity.EXTRA_GRANT_AMOUNT)
+            app.reelUsageRepository.grantExtraAndGet(amount)
             onContinueToApp()
         }
     }
 
     fun onAskForMore() {
-        when {
-            attemptsToday <= 0 -> grantAndContinue()
-            attemptsToday == 1 -> stage = Stage.GUILT
+        when (attemptsToday) {
+            0 -> grantAndContinue(BlockActivity.FIRST_GRANT_AMOUNT)
+            1 -> stage = Stage.GUILT
             else -> stage = Stage.WALK
         }
     }
@@ -129,6 +131,7 @@ private fun BlockScreen(
             Stage.BLOCKED -> BlockedContent(
                 dailyLimit = dailyLimit,
                 name = name,
+                attemptsToday = attemptsToday,
                 onGoHome = onGoHome,
                 onAskForMore = ::onAskForMore
             )
@@ -136,19 +139,27 @@ private fun BlockScreen(
                 dailyLimit = dailyLimit,
                 name = name,
                 onBail = onGoHome,
-                onGrantAnyway = { grantAndContinue() }
+                onGrantAnyway = { grantAndContinue(BlockActivity.GUILT_GRANT_AMOUNT) }
             )
             Stage.WALK -> WalkContent(
                 name = name,
                 onBail = onGoHome,
-                onWalkComplete = { grantAndContinue() }
+                onWalkComplete = { grantAndContinue(BlockActivity.WALK_GRANT_AMOUNT) }
             )
         }
     }
 }
 
 @Composable
-private fun BlockedContent(dailyLimit: Int, name: String, onGoHome: () -> Unit, onAskForMore: () -> Unit) {
+private fun BlockedContent(
+    dailyLimit: Int,
+    name: String,
+    attemptsToday: Int,
+    onGoHome: () -> Unit,
+    onAskForMore: () -> Unit
+) {
+    val subject = if (name.isEmpty()) "You" else "$name, you"
+    val canAskForMore = attemptsToday < 3
     Scaffold { innerPadding ->
         Column(
             modifier = Modifier
@@ -167,8 +178,8 @@ private fun BlockedContent(dailyLimit: Int, name: String, onGoHome: () -> Unit, 
                 textAlign = TextAlign.Center
             )
             Text(
-                text = (if (name.isEmpty()) "You" else name) +
-                    " set the limit at $dailyLimit reels today, and you hit it. That number only means something if you actually stop here.",
+                text = "$subject set today's limit at $dailyLimit reels, and hit it. " +
+                    "That number only means something if you actually stop here.",
                 fontSize = 16.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
@@ -183,8 +194,19 @@ private fun BlockedContent(dailyLimit: Int, name: String, onGoHome: () -> Unit, 
             Button(onClick = onGoHome, modifier = Modifier.fillMaxWidth()) {
                 Text("Go live my life")
             }
-            TextButton(onClick = onAskForMore, modifier = Modifier.padding(top = 8.dp)) {
-                Text("I really need a few more")
+            if (canAskForMore) {
+                TextButton(onClick = onAskForMore, modifier = Modifier.padding(top = 8.dp)) {
+                    Text("I really need a few more")
+                }
+            } else {
+                Text(
+                    text = "You already used today's last extra — that was final. " +
+                        "The only way to get more now is to go turn off Accessibility for ReclaimLife yourself.",
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 16.dp)
+                )
             }
         }
     }
@@ -287,7 +309,9 @@ private fun WalkContent(name: String, onBail: () -> Unit, onWalkComplete: () -> 
             )
             Text(
                 text = "If you really need more, walk $target steps first. Not a scroll — an actual walk. " +
-                    "Come back when you're done and it'll be waiting for you.",
+                    "Come back when you're done and ${BlockActivity.WALK_GRANT_AMOUNT} reels will be waiting for you. " +
+                    "This is the last one today — after this, the only way to get more is to go turn off " +
+                    "Accessibility for ReclaimLife yourself.",
                 fontSize = 16.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp, bottom = 24.dp)

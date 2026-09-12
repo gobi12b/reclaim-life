@@ -47,13 +47,16 @@ fun HomeScreen(
     nickname: String,
     daysWithinLimit: Int,
     daysExceededLimit: Int,
-    onLimitChange: (Int) -> Unit
+    trackingPaused: Boolean,
+    onLimitChange: (Int) -> Unit,
+    onPausedChange: (Boolean) -> Unit
 ) {
     val name = nickname.trim()
     val context = LocalContext.current
     var pendingLimit by remember(dailyLimit) { mutableIntStateOf(dailyLimit) }
     var isEditingLimit by remember { mutableStateOf(false) }
     var showEditIntroDialog by remember { mutableStateOf(false) }
+    var showPauseConfirmDialog by remember { mutableStateOf(false) }
     val effectiveLimit = dailyLimit + extraAllowance
     val reachedLimit = todayCount >= effectiveLimit
 
@@ -80,6 +83,26 @@ fun HomeScreen(
             verticalArrangement = Arrangement.Center
         ) {
             BrandMark(modifier = Modifier.padding(bottom = 28.dp))
+
+            if (trackingPaused) {
+                Text(
+                    text = "⏸ Tracking paused",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Text(
+                    text = "Reels aren't being counted or blocked right now. You did this to yourself.",
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                )
+                Button(onClick = { onPausedChange(false) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Resume tracking")
+                }
+                return@Column
+            }
 
             if (!isEditingLimit) {
                 val mood = remember(todayCount, effectiveLimit) { Mood.forProgress(todayCount, effectiveLimit) }
@@ -175,8 +198,8 @@ fun HomeScreen(
                 Slider(
                     value = pendingLimit.toFloat(),
                     onValueChange = { pendingLimit = it.toInt() },
-                    valueRange = MIN_DAILY_REEL_LIMIT.toFloat()..150f,
-                    steps = 148,
+                    valueRange = MIN_DAILY_REEL_LIMIT.toFloat()..1000f,
+                    steps = 998,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 8.dp)
@@ -234,6 +257,29 @@ fun HomeScreen(
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+
+            if (!isEditingLimit) {
+                TextButton(
+                    onClick = { showPauseConfirmDialog = true },
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    Text(
+                        "Pause tracking",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (showPauseConfirmDialog) {
+                PauseRecordDialog(
+                    onDismiss = { showPauseConfirmDialog = false },
+                    onConfirmPause = {
+                        onPausedChange(true)
+                        showPauseConfirmDialog = false
+                    }
                 )
             }
         }

@@ -21,6 +21,7 @@ class SettingsRepository(private val context: Context) {
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
         val DAILY_REEL_LIMIT = intPreferencesKey("daily_reel_limit")
         val NICKNAME = stringPreferencesKey("nickname")
+        val TRACKING_PAUSED = booleanPreferencesKey("tracking_paused")
     }
 
     val onboardingComplete: Flow<Boolean> =
@@ -33,8 +34,16 @@ class SettingsRepository(private val context: Context) {
     val nickname: Flow<String> =
         context.settingsDataStore.data.map { it[Keys.NICKNAME] ?: "" }
 
+    /** A deliberate, guilt-gated escape hatch — counting/blocking is skipped entirely while paused. */
+    val trackingPaused: Flow<Boolean> =
+        context.settingsDataStore.data.map { it[Keys.TRACKING_PAUSED] ?: false }
+
     suspend fun setDailyReelLimit(limit: Int) {
         context.settingsDataStore.edit { it[Keys.DAILY_REEL_LIMIT] = limit.coerceAtLeast(MIN_DAILY_REEL_LIMIT) }
+    }
+
+    suspend fun setTrackingPaused(paused: Boolean) {
+        context.settingsDataStore.edit { it[Keys.TRACKING_PAUSED] = paused }
     }
 
     suspend fun completeOnboarding(limit: Int, nickname: String) {

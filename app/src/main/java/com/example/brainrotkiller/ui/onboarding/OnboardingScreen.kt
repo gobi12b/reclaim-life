@@ -187,8 +187,8 @@ private fun SetLimitStep(dailyLimit: Int, onLimitChange: (Int) -> Unit, onNext: 
             Slider(
                 value = dailyLimit.toFloat(),
                 onValueChange = { onLimitChange(it.toInt()) },
-                valueRange = MIN_DAILY_REEL_LIMIT.toFloat()..150f,
-                steps = 148,
+                valueRange = MIN_DAILY_REEL_LIMIT.toFloat()..1000f,
+                steps = 998,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 32.dp)

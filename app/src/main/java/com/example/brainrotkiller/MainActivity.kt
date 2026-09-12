@@ -44,6 +44,7 @@ private fun AppContent(viewModel: MainViewModel) {
     val nickname by viewModel.nickname.collectAsStateWithLifecycle()
     val daysWithinLimit by viewModel.daysWithinLimit.collectAsStateWithLifecycle()
     val daysExceededLimit by viewModel.daysExceededLimit.collectAsStateWithLifecycle()
+    val trackingPaused by viewModel.trackingPaused.collectAsStateWithLifecycle()
 
     when (onboardingComplete) {
         null -> Unit // still loading settings, avoid flashing the wrong screen
@@ -55,7 +56,9 @@ private fun AppContent(viewModel: MainViewModel) {
             nickname = nickname,
             daysWithinLimit = daysWithinLimit,
             daysExceededLimit = daysExceededLimit,
-            onLimitChange = { viewModel.updateDailyLimit(it) }
+            trackingPaused = trackingPaused,
+            onLimitChange = { viewModel.updateDailyLimit(it) },
+            onPausedChange = { viewModel.setTrackingPaused(it) }
         )
     }
 }
