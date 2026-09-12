@@ -6,12 +6,22 @@ import androidx.lifecycle.viewModelScope
 import com.example.brainrotkiller.data.DEFAULT_DAILY_REEL_LIMIT
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app: BrainRotKillerApp get() = getApplication()
+
+    init {
+        // Close out yesterday into the within/exceeded tally before anything reads today's count,
+        // so a day the app was never opened doesn't just get silently overwritten unrecorded.
+        viewModelScope.launch {
+            val limit = app.settingsRepository.dailyReelLimit.first()
+            app.reelUsageRepository.closeOutPreviousDayIfNeeded(limit)
+        }
+    }
 
     val onboardingComplete: StateFlow<Boolean?> = app.settingsRepository.onboardingComplete
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -22,8 +32,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val todayReelCount: StateFlow<Int> = app.reelUsageRepository.todayCount
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
-    fun completeOnboarding(limit: Int) {
-        viewModelScope.launch { app.settingsRepository.completeOnboarding(limit) }
+    val todayExtraAllowance: StateFlow<Int> = app.reelUsageRepository.todayExtraAllowance
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    val nickname: StateFlow<String> = app.settingsRepository.nickname
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
+    val daysWithinLimit: StateFlow<Int> = app.reelUsageRepository.daysWithinLimit
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    val daysExceededLimit: StateFlow<Int> = app.reelUsageRepository.daysExceededLimit
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    fun completeOnboarding(limit: Int, nickname: String) {
+        viewModelScope.launch { app.settingsRepository.completeOnboarding(limit, nickname) }
     }
 
     fun updateDailyLimit(limit: Int) {

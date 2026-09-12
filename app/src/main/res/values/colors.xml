@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_coral">#FF6B4A</color>
-    <color name="brand_gold">#FFC157</color>
-    <color name="brand_teal">#2A9D8F</color>
-    <color name="splash_background">#FF6B4A</color>
+    <color name="brand_green">#3F7D4A</color>
+    <color name="brand_brown">#8B5E34</color>
+    <color name="brand_gold">#D9A441</color>
+    <color name="splash_background">#3F7D4A</color>
 </resources>

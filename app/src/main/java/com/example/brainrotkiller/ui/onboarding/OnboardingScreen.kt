@@ -15,10 +15,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,24 +35,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.brainrotkiller.data.DEFAULT_DAILY_REEL_LIMIT
 import com.example.brainrotkiller.data.MIN_DAILY_REEL_LIMIT
 import com.example.brainrotkiller.service.isReelBlockerServiceEnabled
 import com.example.brainrotkiller.ui.common.BrandMark
 
 private enum class OnboardingStep(val index: Int) {
-    WELCOME(0), SET_LIMIT(1), ACCOUNTABILITY(2), PERMISSION(3), READY(4)
+    WELCOME(0), NICKNAME(1), SET_LIMIT(2), ACCOUNTABILITY(3), PERMISSION(4), READY(5)
 }
-private const val STEP_COUNT = 5
+private const val STEP_COUNT = 6
 
 @Composable
-fun OnboardingFlow(onComplete: (dailyLimit: Int) -> Unit) {
+fun OnboardingFlow(onComplete: (dailyLimit: Int, nickname: String) -> Unit) {
     var step by rememberSaveable { mutableStateOf(OnboardingStep.WELCOME) }
     var dailyLimit by rememberSaveable { mutableIntStateOf(DEFAULT_DAILY_REEL_LIMIT) }
+    var nickname by rememberSaveable { mutableStateOf("") }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         when (step) {
-            OnboardingStep.WELCOME -> WelcomeStep(onNext = { step = OnboardingStep.SET_LIMIT })
+            OnboardingStep.WELCOME -> WelcomeStep(onNext = { step = OnboardingStep.NICKNAME })
+            OnboardingStep.NICKNAME -> NicknameStep(
+                nickname = nickname,
+                onNicknameChange = { nickname = it },
+                onNext = { step = OnboardingStep.SET_LIMIT }
+            )
             OnboardingStep.SET_LIMIT -> SetLimitStep(
                 dailyLimit = dailyLimit,
                 onLimitChange = { dailyLimit = it },
@@ -57,7 +69,7 @@ fun OnboardingFlow(onComplete: (dailyLimit: Int) -> Unit) {
             )
             OnboardingStep.ACCOUNTABILITY -> AccountabilityStep(onNext = { step = OnboardingStep.PERMISSION })
             OnboardingStep.PERMISSION -> PermissionStep(onNext = { step = OnboardingStep.READY })
-            OnboardingStep.READY -> ReadyStep(onFinish = { onComplete(dailyLimit) })
+            OnboardingStep.READY -> ReadyStep(nickname = nickname, onFinish = { onComplete(dailyLimit, nickname) })
         }
     }
 }
@@ -134,6 +146,29 @@ private fun WelcomeStep(onNext: () -> Unit) {
 }
 
 @Composable
+private fun NicknameStep(nickname: String, onNicknameChange: (String) -> Unit, onNext: () -> Unit) {
+    StepScaffold(
+        stepIndex = OnboardingStep.NICKNAME.index,
+        title = "What should we call you?",
+        body = "Just a first name or nickname — ReclaimLife will use it when it talks to you, " +
+            "instead of talking at you like every other app.",
+        primaryLabel = "Continue",
+        onPrimary = onNext,
+        extraContent = {
+            OutlinedTextField(
+                value = nickname,
+                onValueChange = { if (it.length <= 20) onNicknameChange(it) },
+                placeholder = { Text("Your name") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp)
+            )
+        }
+    )
+}
+
+@Composable
 private fun SetLimitStep(dailyLimit: Int, onLimitChange: (Int) -> Unit, onNext: () -> Unit) {
     StepScaffold(
         stepIndex = OnboardingStep.SET_LIMIT.index,
@@ -178,7 +213,20 @@ private fun AccountabilityStep(onNext: () -> Unit) {
 @Composable
 private fun PermissionStep(onNext: () -> Unit) {
     val context = LocalContext.current
-    var enabled by remember { mutableStateOf(isReelBlockerServiceEnabled(context)) }
+    var resumeTick by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumeTick++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val enabled = remember(resumeTick) { isReelBlockerServiceEnabled(context) }
+
+    // Once they flip it on in Settings and come back, move on automatically instead of
+    // making them tap Continue for something we already know is done.
+    LaunchedEffect(enabled) { if (enabled) onNext() }
 
     StepScaffold(
         stepIndex = OnboardingStep.PERMISSION.index,
@@ -194,19 +242,31 @@ private fun PermissionStep(onNext: () -> Unit) {
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp)
+                    .padding(bottom = 8.dp)
             ) {
                 Text(if (enabled) "Permission granted ✓" else "Open Accessibility settings")
+            }
+            if (!enabled) {
+                Text(
+                    text = "In Accessibility, find ReclaimLife under Downloaded apps and turn it on. " +
+                        "If the switch won't move: Settings → Apps → ReclaimLife → ⋮ menu → " +
+                        "Allow restricted settings, then try again.",
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
             }
         }
     )
 }
 
 @Composable
-private fun ReadyStep(onFinish: () -> Unit) {
+private fun ReadyStep(nickname: String, onFinish: () -> Unit) {
+    val name = nickname.trim()
     StepScaffold(
         stepIndex = OnboardingStep.READY.index,
-        title = "Go live your life.",
+        title = if (name.isEmpty()) "Go live your life." else "Go live your life, $name.",
         body = "You're set up. From here it's on you — be true to life, not to the feed. " +
             "You can always adjust your daily limit later, but the goal is fewer reels, not more excuses.",
         primaryLabel = "Start living",

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -19,6 +20,7 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
         val DAILY_REEL_LIMIT = intPreferencesKey("daily_reel_limit")
+        val NICKNAME = stringPreferencesKey("nickname")
     }
 
     val onboardingComplete: Flow<Boolean> =
@@ -27,13 +29,18 @@ class SettingsRepository(private val context: Context) {
     val dailyReelLimit: Flow<Int> =
         context.settingsDataStore.data.map { it[Keys.DAILY_REEL_LIMIT] ?: DEFAULT_DAILY_REEL_LIMIT }
 
+    /** Empty string means no nickname was given — callers fall back to generic phrasing. */
+    val nickname: Flow<String> =
+        context.settingsDataStore.data.map { it[Keys.NICKNAME] ?: "" }
+
     suspend fun setDailyReelLimit(limit: Int) {
         context.settingsDataStore.edit { it[Keys.DAILY_REEL_LIMIT] = limit.coerceAtLeast(MIN_DAILY_REEL_LIMIT) }
     }
 
-    suspend fun completeOnboarding(limit: Int) {
+    suspend fun completeOnboarding(limit: Int, nickname: String) {
         context.settingsDataStore.edit {
             it[Keys.DAILY_REEL_LIMIT] = limit.coerceAtLeast(MIN_DAILY_REEL_LIMIT)
+            it[Keys.NICKNAME] = nickname.trim()
             it[Keys.ONBOARDING_COMPLETE] = true
         }
     }

@@ -40,13 +40,21 @@ private fun AppContent(viewModel: MainViewModel) {
     val onboardingComplete by viewModel.onboardingComplete.collectAsStateWithLifecycle()
     val dailyLimit by viewModel.dailyReelLimit.collectAsStateWithLifecycle()
     val todayCount by viewModel.todayReelCount.collectAsStateWithLifecycle()
+    val extraAllowance by viewModel.todayExtraAllowance.collectAsStateWithLifecycle()
+    val nickname by viewModel.nickname.collectAsStateWithLifecycle()
+    val daysWithinLimit by viewModel.daysWithinLimit.collectAsStateWithLifecycle()
+    val daysExceededLimit by viewModel.daysExceededLimit.collectAsStateWithLifecycle()
 
     when (onboardingComplete) {
         null -> Unit // still loading settings, avoid flashing the wrong screen
-        false -> OnboardingFlow(onComplete = { limit -> viewModel.completeOnboarding(limit) })
+        false -> OnboardingFlow(onComplete = { limit, name -> viewModel.completeOnboarding(limit, name) })
         true -> HomeScreen(
             dailyLimit = dailyLimit,
             todayCount = todayCount,
+            extraAllowance = extraAllowance,
+            nickname = nickname,
+            daysWithinLimit = daysWithinLimit,
+            daysExceededLimit = daysExceededLimit,
             onLimitChange = { viewModel.updateDailyLimit(it) }
         )
     }
