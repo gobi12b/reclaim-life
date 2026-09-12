@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">ReclaimLife</string>
+    <string name="app_tagline">Brain Rot Killer</string>
+    <string name="accessibility_service_label">ReclaimLife reel counter</string>
+    <string name="accessibility_service_description">Watches for scrolling inside Instagram Reels and YouTube Shorts so ReclaimLife can count reels against your daily limit and stop you once you hit it.</string>
+</resources>
