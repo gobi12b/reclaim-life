@@ -91,3 +91,20 @@ fun BrandMark(modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * Top-bar-sized lockup for screens where the brand isn't the point (Home). The full [BrandMark]
+ * stays for first-run onboarding; everywhere else the sprout's mood carries the personality.
+ */
+@Composable
+fun CompactBrandMark(modifier: Modifier = Modifier) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+        SproutBadge(size = 20.dp)
+        Text(
+            text = "ReclaimLife",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}

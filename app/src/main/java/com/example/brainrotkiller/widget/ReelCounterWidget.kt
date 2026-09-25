@@ -31,10 +31,14 @@ import com.example.brainrotkiller.BrainRotKillerApp
 import com.example.brainrotkiller.MainActivity
 import com.example.brainrotkiller.data.DEFAULT_DAILY_REEL_LIMIT
 import com.example.brainrotkiller.data.Mood
+import com.example.brainrotkiller.service.isReelBlockerServiceRunning
+import java.text.DateFormat
+import java.util.Date
 
 private val WidgetBackground = Color(0xFF141A14)
 private val WidgetOnBackground = Color(0xFFEDE0D4)
 private val WidgetSubtext = Color(0xFFC4C8B8)
+private val WidgetWarning = Color(0xFFFFB4AB)
 
 class ReelCounterWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -47,8 +51,23 @@ class ReelCounterWidget : GlanceAppWidget() {
         val dailyLimit by app.settingsRepository.dailyReelLimit.collectAsState(initial = DEFAULT_DAILY_REEL_LIMIT)
         val todayCount by app.reelUsageRepository.todayCount.collectAsState(initial = 0)
         val extraAllowance by app.reelUsageRepository.todayExtraAllowance.collectAsState(initial = 0)
+        val pausedUntilMs by app.settingsRepository.pausedUntilMs.collectAsState(initial = 0L)
         val effectiveLimit = dailyLimit + extraAllowance
         val mood = Mood.forProgress(todayCount, effectiveLimit)
+        // Glance can't tick a countdown, so a pause shows its end time; the service refreshes the
+        // widget when the pause runs out. Service state is read at render time — the widget is
+        // re-rendered on every count change and on its 30-min period, so a dead counter shows up
+        // here within that window instead of the widget looking like it's still tracking.
+        val paused = System.currentTimeMillis() < pausedUntilMs
+        val serviceRunning = isReelBlockerServiceRunning(context)
+        val headline = "${mood.emoji} $todayCount / $effectiveLimit"
+        val subline = when {
+            paused -> "paused until " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(pausedUntilMs))
+            !serviceRunning -> "not counting — tap to fix"
+            extraAllowance > 0 -> "reels today · +$extraAllowance extra"
+            else -> "reels today"
+        }
+        val sublineColor = if (paused || !serviceRunning) WidgetWarning else WidgetSubtext
 
         GlanceTheme {
             Box(
@@ -61,7 +80,7 @@ class ReelCounterWidget : GlanceAppWidget() {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "${mood.emoji} $todayCount / $effectiveLimit",
+                        text = headline,
                         style = TextStyle(
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
@@ -69,8 +88,8 @@ class ReelCounterWidget : GlanceAppWidget() {
                         )
                     )
                     Text(
-                        text = "reels today",
-                        style = TextStyle(fontSize = 11.sp, color = ColorProvider(WidgetSubtext))
+                        text = subline,
+                        style = TextStyle(fontSize = 11.sp, color = ColorProvider(sublineColor))
                     )
                 }
             }

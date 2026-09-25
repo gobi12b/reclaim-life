@@ -15,6 +15,7 @@ import android.widget.TextView
 import com.example.brainrotkiller.BrainRotKillerApp
 import com.example.brainrotkiller.data.Mood
 import com.example.brainrotkiller.data.TargetApps
+import com.example.brainrotkiller.data.formatPauseRemaining
 import com.example.brainrotkiller.ui.block.BlockActivity
 import com.example.brainrotkiller.widget.refreshReelWidget
 import kotlinx.coroutines.CoroutineScope
@@ -26,11 +27,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Watches Instagram/YouTube for reel-feed scrolling and counts each scroll as one reel watched.
- * Exact reel boundaries aren't exposed by these apps, so a debounced scroll event is the
- * closest reliable proxy for "the user swiped to the next reel". While a target app is in the
- * foreground, a small live counter badge is drawn over it via the accessibility-overlay window
- * type, which needs no extra "draw over other apps" permission.
+ * Watches Instagram Reels / YouTube Shorts and counts each reel swiped past. Only the reels
+ * viewer counts ([ReelSurfaces]); a swipe is one reel when the pager settles on a new item
+ * ([ReelPageTracker]). While that viewer is on screen, a small live counter badge is drawn over
+ * it via the accessibility-overlay window type, which needs no extra "draw over other apps"
+ * permission. View IDs are only reported because the config sets flagReportViewIds.
  */
 class ReelBlockerAccessibilityService : AccessibilityService() {
 
@@ -40,16 +41,40 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
     private var dailyLimit: Int = Int.MAX_VALUE
     private var todayCount: Int = 0
     private var extraAllowance: Int = 0
-    private var trackingPaused: Boolean = false
+    private var pausedUntilMs: Long = 0L
+    /** Read at every event rather than cached, so a pause ends on time without anything writing to storage. */
+    private val trackingPaused: Boolean get() = System.currentTimeMillis() < pausedUntilMs
     private val effectiveLimit: Int get() = dailyLimit + extraAllowance
 
-    private var lastCountedAtMs: Long = 0L
     private var lastBlockShownAtMs: Long = 0L
-    private var lastVisibleReelChild: android.view.accessibility.AccessibilityNodeInfo? = null
+    private val pageTracker = ReelPageTracker(debounceMs = SCROLL_DEBOUNCE_MS)
+
+    // Reels-viewer presence is looked up in the window's node tree, which is too costly to do on
+    // every content-changed event; the answer is reused briefly and dropped on window changes.
+    private var surfaceCheckedAtMs: Long = 0L
+    private var surfaceCheckedPackage: String? = null
+    private var onReelSurfaceCached: Boolean = false
 
     private var overlayView: TextView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val leaveSessionRunnable = Runnable { overlayView?.visibility = View.GONE }
+    private val leaveSessionRunnable = Runnable {
+        overlayView?.visibility = View.GONE
+        pageTracker.reset()
+    }
+    /** Fires when a pause runs out, so the badge/widget flip back to counting without waiting for an event. */
+    private val pauseEndedRunnable = Runnable {
+        refreshOverlayText()
+        serviceScope.launch { refreshReelWidget(this@ReelBlockerAccessibilityService) }
+    }
+    /** Keeps the badge's pause countdown moving while it's on screen. */
+    private val pauseTickRunnable = object : Runnable {
+        override fun run() {
+            refreshOverlayText()
+            if (trackingPaused && overlayView?.visibility == View.VISIBLE) {
+                mainHandler.postDelayed(this, PAUSE_TICK_MS)
+            }
+        }
+    }
 
     private val windowManager: WindowManager by lazy { getSystemService(WindowManager::class.java) }
     private val app: BrainRotKillerApp get() = application as BrainRotKillerApp
@@ -60,6 +85,7 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
             val limit = app.settingsRepository.dailyReelLimit.first()
             app.reelUsageRepository.closeOutPreviousDayIfNeeded(limit)
         }
+        serviceScope.launch { app.settingsRepository.migrateLegacyPauseIfNeeded() }
         serviceScope.launch {
             app.settingsRepository.dailyReelLimit.collectLatest {
                 dailyLimit = it
@@ -82,9 +108,14 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
             }
         }
         serviceScope.launch {
-            app.settingsRepository.trackingPaused.collectLatest {
-                trackingPaused = it
+            app.settingsRepository.pausedUntilMs.collectLatest {
+                pausedUntilMs = it
+                mainHandler.removeCallbacks(pauseEndedRunnable)
+                val remaining = it - System.currentTimeMillis()
+                if (remaining > 0) mainHandler.postDelayed(pauseEndedRunnable, remaining)
                 refreshOverlayText()
+                startPauseTickIfNeeded()
+                refreshReelWidget(this@ReelBlockerAccessibilityService)
             }
         }
     }
@@ -106,61 +137,68 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
             return
         }
 
-        showCounterOverlay()
+        // The badge and the counting follow the same signal: only while the Reels / Shorts viewer
+        // is on screen. Feed, profiles, explore, stories and DMs neither show it nor count.
+        val onReels = isOnReelSurface(packageName, event)
+        if (onReels) showCounterOverlay() else scheduleLeaveSession()
 
         if (trackingPaused) return
 
+        // Blocking is deliberately app-wide, not reels-only: once over the limit, the stop screen
+        // takes over Instagram/YouTube wherever you are in it.
         if (todayCount >= effectiveLimit) {
             showBlockScreenIfNeeded()
             return
         }
 
-        if (packageName == TargetApps.YOUTUBE) {
-            val reelNode = rootInActiveWindow?.findAccessibilityNodeInfosByViewId(
-                "com.google.android.youtube:id/reel_recycler"
-            )?.firstOrNull()
-            val visibleChild = reelNode?.let { parent ->
-                (0 until parent.childCount).mapNotNull { parent.getChild(it) }.firstOrNull { it.isVisibleToUser }
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED && onReels) {
+            val isReelScroll = ReelSurfaces.isReelScroll(packageName, idChainOf(event.source))
+            val reels = if (isReelScroll) {
+                pageTracker.onScroll(event.fromIndex, event.toIndex, System.currentTimeMillis())
+            } else {
+                0
             }
-            if (visibleChild != null && visibleChild != lastVisibleReelChild) {
-                android.util.Log.d(
-                    "ReelDebug",
-                    "REEL_CHILD_CHANGED prevWasNull=${lastVisibleReelChild == null} " +
-                        "childClass=${visibleChild.className} childText=${visibleChild.text} " +
-                        "childDesc=${visibleChild.contentDescription}"
-                )
-                lastVisibleReelChild = visibleChild
-            }
-        }
-
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED && isReelSurface(packageName, event)) {
-            registerReelScroll()
+            if (reels > 0) registerReels(reels)
         }
     }
 
     /**
-     * YouTube is one app with many scrollable surfaces (home feed, search, comments, Shorts) —
-     * counting every scroll in the whole app was both over-counting from normal video browsing
-     * (blocking regular YouTube use) and, since that noise ate the debounce window, sometimes
-     * missing genuine Shorts swipes. YouTube's Shorts implementation is internally still called
-     * "reel" (confirmed via the live view hierarchy: reel_recycler, reel_player_page_container,
-     * reel_watch_fragment_root, …), so only scrolls sourced from a "reel_" view actually count.
-     * Instagram's Reels tab isn't similarly scoped — its counting already works from any scroll
-     * while the Reels surface is frontmost, so it's left as-is to avoid regressing it.
+     * Whether the Reels (Instagram) / Shorts (YouTube) viewer is visible in the active window —
+     * see [ReelSurfaces]. Fails closed: no window, no match or an error all mean "not reels".
      */
-    private fun isReelSurface(packageName: String?, event: AccessibilityEvent): Boolean {
-        if (packageName != TargetApps.YOUTUBE) return true
-        val resourceId = event.source?.viewIdResourceName ?: return false
-        return resourceId.contains("reel_")
+    private fun isOnReelSurface(packageName: String?, event: AccessibilityEvent): Boolean {
+        val viewerId = ReelSurfaces.viewerIdFor(packageName) ?: return false
+        val now = System.currentTimeMillis()
+        val fresh = event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            packageName == surfaceCheckedPackage &&
+            now - surfaceCheckedAtMs < SURFACE_CHECK_TTL_MS
+        if (fresh) return onReelSurfaceCached
+
+        val found = runCatching {
+            rootInActiveWindow?.findAccessibilityNodeInfosByViewId(viewerId)?.any { it.isVisibleToUser } == true
+        }.getOrDefault(false)
+        surfaceCheckedAtMs = now
+        surfaceCheckedPackage = packageName
+        onReelSurfaceCached = found
+        return found
     }
 
-    private fun registerReelScroll() {
-        val now = System.currentTimeMillis()
-        if (now - lastCountedAtMs < SCROLL_DEBOUNCE_MS) return
-        lastCountedAtMs = now
+    /** The node's view ID plus up to [ID_CHAIN_DEPTH] ancestors' (needs flagReportViewIds). */
+    private fun idChainOf(node: android.view.accessibility.AccessibilityNodeInfo?): List<String?> {
+        val ids = mutableListOf<String?>()
+        var current = node
+        var depth = 0
+        while (current != null && depth <= ID_CHAIN_DEPTH) {
+            ids += current.viewIdResourceName
+            current = current.parent
+            depth++
+        }
+        return ids
+    }
 
+    private fun registerReels(reels: Int) {
         serviceScope.launch {
-            val newCount = app.reelUsageRepository.incrementAndGet()
+            val newCount = app.reelUsageRepository.incrementAndGet(reels)
             todayCount = newCount
             refreshOverlayText()
             if (newCount >= effectiveLimit) {
@@ -215,6 +253,14 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         mainHandler.removeCallbacks(leaveSessionRunnable)
         ensureOverlayView().visibility = View.VISIBLE
         refreshOverlayText()
+        startPauseTickIfNeeded()
+    }
+
+    private fun startPauseTickIfNeeded() {
+        mainHandler.removeCallbacks(pauseTickRunnable)
+        if (trackingPaused && overlayView?.visibility == View.VISIBLE) {
+            mainHandler.postDelayed(pauseTickRunnable, PAUSE_TICK_MS)
+        }
     }
 
     /** Ends the session (and hides the badge) after a grace period, so a stray blip doesn't end it early. */
@@ -227,11 +273,14 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         val view = overlayView ?: return
         if (view.visibility != View.VISIBLE) return
         if (trackingPaused) {
-            view.text = "😢 Paused"
+            view.text = "😢 Paused · ${formatPauseRemaining(pausedUntilMs - System.currentTimeMillis())}"
             return
         }
         val mood = Mood.forProgress(todayCount, effectiveLimit)
-        view.text = "${mood.emoji} $todayCount / $effectiveLimit reels"
+        // Same shape as Home and the widget: the total you're blocked at, with any extra called
+        // out, so "190" never appears without explaining where the extra 4 came from.
+        val extra = if (extraAllowance > 0) " (+$extraAllowance)" else ""
+        view.text = "${mood.emoji} $todayCount / $effectiveLimit$extra reels"
     }
 
     override fun onInterrupt() {}
@@ -239,6 +288,8 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         mainHandler.removeCallbacks(leaveSessionRunnable)
+        mainHandler.removeCallbacks(pauseEndedRunnable)
+        mainHandler.removeCallbacks(pauseTickRunnable)
         overlayView?.let { runCatching { windowManager.removeView(it) } }
         overlayView = null
         serviceJob.cancel()
@@ -248,5 +299,8 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         private const val SCROLL_DEBOUNCE_MS = 700L
         private const val BLOCK_REDISPLAY_COOLDOWN_MS = 1500L
         private const val HIDE_GRACE_MS = 1200L
+        private const val PAUSE_TICK_MS = 1000L
+        private const val SURFACE_CHECK_TTL_MS = 300L
+        private const val ID_CHAIN_DEPTH = 3
     }
 }

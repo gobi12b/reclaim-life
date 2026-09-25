@@ -27,6 +27,7 @@ class ReelUsageRepository(private val context: Context) {
         val EXTRA_ATTEMPTS = intPreferencesKey("extra_attempts")
         val DAYS_WITHIN_LIMIT = intPreferencesKey("days_within_limit")
         val DAYS_EXCEEDED_LIMIT = intPreferencesKey("days_exceeded_limit")
+        val DAY_HISTORY = stringPreferencesKey("day_history")
     }
 
     /** Lifetime count of past days that ended at or under that day's limit. */
@@ -34,6 +35,13 @@ class ReelUsageRepository(private val context: Context) {
 
     /** Lifetime count of past days that ended over that day's limit. */
     val daysExceededLimit: Flow<Int> = context.usageDataStore.data.map { it[Keys.DAYS_EXCEEDED_LIMIT] ?: 0 }
+
+    /**
+     * Per-date outcome ([DayOutcome]) of closed-out days. Only days closed out since this was
+     * added are in it — the lifetime totals above predate it and aren't back-filled.
+     */
+    val dayHistory: Flow<Map<String, DayOutcome>> =
+        context.usageDataStore.data.map { parseDayHistory(it[Keys.DAY_HISTORY]) }
 
     /**
      * Closes out the previous day into the within/exceeded tally, using [currentLimit] as a stand-in
@@ -48,8 +56,12 @@ class ReelUsageRepository(private val context: Context) {
             if (storedDate != null && storedDate != today) {
                 val finalCount = prefs[Keys.REEL_COUNT] ?: 0
                 val finalAllowance = prefs[Keys.EXTRA_ALLOWANCE] ?: 0
-                val key = if (finalCount <= currentLimit + finalAllowance) Keys.DAYS_WITHIN_LIMIT else Keys.DAYS_EXCEEDED_LIMIT
+                val within = finalCount <= currentLimit + finalAllowance
+                val key = if (within) Keys.DAYS_WITHIN_LIMIT else Keys.DAYS_EXCEEDED_LIMIT
                 prefs[key] = (prefs[key] ?: 0) + 1
+                val history = parseDayHistory(prefs[Keys.DAY_HISTORY]).toMutableMap()
+                history[storedDate] = if (within) DayOutcome.WITHIN else DayOutcome.OVER
+                prefs[Keys.DAY_HISTORY] = serializeDayHistory(history)
             }
             rollDateIfNeeded(prefs, today)
         }
@@ -73,12 +85,13 @@ class ReelUsageRepository(private val context: Context) {
         if (prefs[Keys.COUNT_DATE] == todayKey()) prefs[Keys.EXTRA_ATTEMPTS] ?: 0 else 0
     }
 
-    suspend fun incrementAndGet(): Int {
+    /** Adds [amount] reels (usually 1; more if a pager skipped past several at once). */
+    suspend fun incrementAndGet(amount: Int = 1): Int {
         var result = 0
         context.usageDataStore.edit { prefs ->
             val today = todayKey()
             val current = if (prefs[Keys.COUNT_DATE] == today) prefs[Keys.REEL_COUNT] ?: 0 else 0
-            result = current + 1
+            result = current + amount
             rollDateIfNeeded(prefs, today)
             prefs[Keys.REEL_COUNT] = result
         }

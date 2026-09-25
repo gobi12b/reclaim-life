@@ -40,14 +40,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.brainrotkiller.BrainRotKillerApp
-import com.example.brainrotkiller.ui.common.BrandMark
+import com.example.brainrotkiller.data.Mood
 import com.example.brainrotkiller.ui.common.SproutBadge
 import com.example.brainrotkiller.ui.theme.BrainRotKillerTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -91,6 +94,9 @@ class BlockActivity : ComponentActivity() {
         const val GUILT_GRANT_AMOUNT = 2
         const val WALK_GRANT_AMOUNT = 50
         const val WALK_TARGET_STEPS = 200
+        /** When steps can't be counted (permission denied / no sensor), the walk is a timed wait instead. */
+        const val WALK_FALLBACK_SECONDS = 120
+        const val MAX_EXTRA_ASKS = 3
     }
 }
 
@@ -110,6 +116,8 @@ private fun BlockScreen(
 
     var stage by remember { mutableStateOf(Stage.BLOCKED) }
     val attemptsToday by app.reelUsageRepository.todayExtraAttempts.collectAsState(initial = 0)
+    val todayCount by app.reelUsageRepository.todayCount.collectAsState(initial = dailyLimit)
+    val extraAllowance by app.reelUsageRepository.todayExtraAllowance.collectAsState(initial = 0)
 
     fun grantAndContinue(amount: Int) {
         scope.launch {
@@ -130,6 +138,8 @@ private fun BlockScreen(
         when (stage) {
             Stage.BLOCKED -> BlockedContent(
                 dailyLimit = dailyLimit,
+                todayCount = todayCount,
+                extraAllowance = extraAllowance,
                 name = name,
                 attemptsToday = attemptsToday,
                 onGoHome = onGoHome,
@@ -153,13 +163,15 @@ private fun BlockScreen(
 @Composable
 private fun BlockedContent(
     dailyLimit: Int,
+    todayCount: Int,
+    extraAllowance: Int,
     name: String,
     attemptsToday: Int,
     onGoHome: () -> Unit,
     onAskForMore: () -> Unit
 ) {
     val subject = if (name.isEmpty()) "You" else "$name, you"
-    val canAskForMore = attemptsToday < 3
+    val canAskForMore = attemptsToday < BlockActivity.MAX_EXTRA_ASKS
     Scaffold { innerPadding ->
         Column(
             modifier = Modifier
@@ -169,27 +181,34 @@ private fun BlockedContent(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            BrandMark(modifier = Modifier.padding(bottom = 24.dp))
-            SproutBadge(modifier = Modifier.padding(bottom = 16.dp), size = 56.dp)
+            // The sprout is the emotional lead here; the wordmark lockup was dropped (it competed).
+            SproutBadge(modifier = Modifier.padding(bottom = 12.dp), size = 56.dp)
+            Text(
+                text = Mood.DONE.emoji,
+                fontSize = 32.sp,
+                modifier = Modifier
+                    .padding(bottom = 8.dp)
+                    .clearAndSetSemantics { contentDescription = "Mood: ${Mood.DONE.label}" }
+            )
+            Text(
+                text = "$todayCount / ${dailyLimit + extraAllowance} reels" +
+                    if (extraAllowance > 0) " ($dailyLimit + $extraAllowance extra)" else "",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Text(
                 text = "Daily limit reached",
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp)
             )
             Text(
-                text = "$subject set today's limit at $dailyLimit reels, and hit it. " +
-                    "That number only means something if you actually stop here.",
+                text = "$subject set this number. It only means something if you stop here.",
                 fontSize = 16.sp,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-            )
-            Text(
-                text = "Accountability is the whole point. Go live your life today — not the algorithm's version of it. Tomorrow you get to decide the number again.",
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 32.dp)
+                modifier = Modifier.padding(top = 12.dp, bottom = 32.dp)
             )
             Button(onClick = onGoHome, modifier = Modifier.fillMaxWidth()) {
                 Text("Go live my life")
@@ -198,6 +217,19 @@ private fun BlockedContent(
                 TextButton(onClick = onAskForMore, modifier = Modifier.padding(top = 8.dp)) {
                     Text("I really need a few more")
                 }
+                // The ladder is shown so the cost is known up front — without advertising
+                // that the first ask is free.
+                Text(
+                    text = "Extras today: $attemptsToday of ${BlockActivity.MAX_EXTRA_ASKS} used — " + when (attemptsToday) {
+                        0 -> "each one costs more than the last."
+                        1 -> "the next one comes with a gut check."
+                        else -> "the last one needs a ${BlockActivity.WALK_TARGET_STEPS}-step walk."
+                    },
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             } else {
                 Text(
                     text = "You already used today's last extra — that was final. " +
@@ -290,7 +322,18 @@ private fun WalkContent(name: String, onBail: () -> Unit, onWalkComplete: () -> 
         }
     }
 
-    val walkDone = stepsWalked >= target
+    val canCountSteps = permissionGranted && sensorAvailable
+    // Without step counting, "I'm done" used to be tappable immediately — a one-tap bypass of the
+    // last gate. It now waits out a fixed walk-length timer instead.
+    var fallbackSecondsLeft by remember { mutableIntStateOf(BlockActivity.WALK_FALLBACK_SECONDS) }
+    LaunchedEffect(canCountSteps) {
+        if (canCountSteps) return@LaunchedEffect
+        while (fallbackSecondsLeft > 0) {
+            delay(1000)
+            fallbackSecondsLeft--
+        }
+    }
+    val walkDone = if (canCountSteps) stepsWalked >= target else fallbackSecondsLeft == 0
 
     Scaffold { innerPadding ->
         Column(
@@ -316,7 +359,7 @@ private fun WalkContent(name: String, onBail: () -> Unit, onWalkComplete: () -> 
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp, bottom = 24.dp)
             )
-            if (permissionGranted && sensorAvailable) {
+            if (canCountSteps) {
                 Text(
                     text = "$stepsWalked / $target steps",
                     fontSize = 22.sp,
@@ -331,20 +374,30 @@ private fun WalkContent(name: String, onBail: () -> Unit, onWalkComplete: () -> 
                 )
             } else {
                 Text(
-                    text = "We can't count steps without the Physical Activity permission — " +
-                        "go for a short walk anyway, then tell us you're done.",
+                    text = if (!sensorAvailable) {
+                        "This phone can't count steps — go for a walk anyway. This unlocks when the timer runs out."
+                    } else {
+                        "We can't count steps without the Physical Activity permission — go for a walk " +
+                            "anyway. This unlocks when the timer runs out."
+                    },
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    text = "%d:%02d".format(fallbackSecondsLeft / 60, fallbackSecondsLeft % 60),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 24.dp)
                 )
             }
             Button(
                 onClick = onWalkComplete,
-                enabled = !permissionGranted || !sensorAvailable || walkDone,
+                enabled = walkDone,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (permissionGranted && sensorAvailable && !walkDone) "Keep walking…" else "I'm done — continue")
+                Text(if (walkDone) "I'm done — continue" else "Keep walking…")
             }
             TextButton(onClick = onBail, modifier = Modifier.padding(top = 8.dp)) {
                 Text("Never mind, I'll stop")

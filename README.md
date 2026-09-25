@@ -6,30 +6,36 @@ feed once you hit it — with real, escalating friction (not a dismissible nag) 
 
 ## What it does
 
-- **Onboarding** — a short first-run flow: welcome, pick a nickname, set a daily reel limit
-  (deliberately encouraged to start liberal and come down over time), an accountability pledge,
-  and Accessibility permission setup (auto-advances once granted).
+- **Onboarding** — a short first-run flow: a welcome that doubles as the accountability pledge,
+  an optional nickname, a daily reel limit (deliberately encouraged to start liberal and come
+  down over time), and Accessibility permission setup with a prominent disclosure
+  (auto-advances once granted).
 - **Live counting** — an `AccessibilityService` watches Instagram and YouTube in the background.
-  Instagram's Reels feed is counted from any scroll while it's frontmost. YouTube is scoped
-  specifically to its Shorts surface (internally still named `reel_*` in its view hierarchy) so
-  normal YouTube browsing isn't miscounted.
+  Only the reels viewers count: Instagram's `clips_viewer_view_pager` (Reels tab and any reel
+  opened from feed/DMs/profile; Instagram calls Reels "clips", and its `reel_viewer_*` IDs are
+  Stories) and YouTube's Shorts `reel_*` views. Feed, profiles, explore and stories don't count.
+  A swipe counts once, when the pager settles on a new reel.
 - **Live overlay badge** — a small always-on-top badge shows today's count and a mood emoji
-  (🌱 → 🙂 → 😕 → 😩 → 😴) that gets gloomier as you approach the limit, while you're in a
-  tracked app.
+  (🌱 → 🙂 → 😕 → 😩 → 😴) that gets gloomier as you approach the limit, while the Reels /
+  Shorts viewer is on screen.
 - **Block screen** — hit your limit and a full-screen stop takes over the app you're in
   (no "draw over other apps" permission needed — it's a real Activity with an empty task
   affinity, not a system overlay). From there:
   - 1st "I really need a few more" → 10 extra reels, no friction.
   - 2nd ask → a guilt-trip screen before granting 2 more.
-  - 3rd ask → walk 200 real steps (tracked via the step-counter sensor, with a timed fallback if
+  - 3rd ask → walk 200 real steps (tracked via the step-counter sensor, with a 2-minute timed fallback if
     that permission is denied) for a final 50. After that, the ask-for-more option disappears —
     the only way to get more that day is to go disable Accessibility yourself.
 - **Pause tracking** — a deliberate escape hatch on the Home screen. Turning it off requires
   recording yourself out loud saying "I want to rot my brain" and playing it back before the
-  button to actually pause becomes tappable.
-- **Home dashboard** — today's count/limit, an editable daily limit (nudges you against raising
-  it, with a reminder dialog), and a running tally of how many days you stayed within limit vs.
-  went over.
+  button to actually pause becomes tappable. Every pause is time-boxed (15 min / 1 hour / rest of
+  today — which needs two separate recordings, both played back) and resumes on its own; Home,
+  the widget and the overlay badge show the countdown. While paused the limit can be lowered
+  but not raised.
+- **Home dashboard** — today's remaining reels and count/limit (any extra allowance called out
+  explicitly), an editable daily limit (stepper + presets, capped at 300; raising it asks for
+  confirmation at Save), a 7-day within/over strip with the current streak, and a banner when
+  the counter is off *or* switched on but not actually running.
 - **Home-screen widget** — a Glance widget showing today's count, updated live.
 
 ## Why it's built this way

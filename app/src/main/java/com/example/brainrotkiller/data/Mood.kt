@@ -18,8 +18,10 @@ enum class Mood(val emoji: String, val label: String) {
             val ratio = count.toFloat() / limit.toFloat()
             return when {
                 ratio >= 1f -> DONE
-                ratio >= 0.85f -> TIRED
-                ratio >= 0.5f -> UNEASY
+                // Negative moods are held back until they mean something: at 55% with half the
+                // budget left, "getting close" read as a scolding rather than a heads-up.
+                ratio >= 0.9f -> TIRED
+                ratio >= 0.7f -> UNEASY
                 ratio >= 0.2f -> GOOD
                 else -> ENERGIZED
             }
