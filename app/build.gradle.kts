@@ -11,17 +11,17 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.example.brainrotkiller"
+    namespace = "io.github.gobi12b.reclaimlife"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.example.brainrotkiller"
+        applicationId = "io.github.gobi12b.reclaimlife"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -40,8 +40,10 @@ android {
     buildTypes {
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
+            // R8 + resource shrinking. Everything reached by reflection (activities, the
+            // accessibility service, the widget receiver) is manifest-referenced, so AGP keeps it.
             optimization {
-                enable = false
+                enable = true
             }
         }
     }

@@ -1,13 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
--->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup on Android 11 and lower. Only the two DataStore files (settings: nickname, limit,
+     pause; reel_usage: today's count and day history) are backed up. Glance's widget state isn't,
+     since widget IDs don't carry over to a new device, and the pause recording lives in cacheDir,
+     which Android never backs up. Keep in sync with data_extraction_rules.xml and PRIVACY.md. -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <include domain="file" path="datastore/settings.preferences_pb" />
+    <include domain="file" path="datastore/reel_usage.preferences_pb" />
 </full-backup-content>

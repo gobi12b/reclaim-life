@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BrainRotKiller"
+rootProject.name = "ReclaimLife"
 include(":app")
  

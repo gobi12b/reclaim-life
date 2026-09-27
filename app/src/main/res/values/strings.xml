@@ -1,7 +1,17 @@
 <resources>
     <string name="app_name">ReclaimLife</string>
-    <string name="app_tagline">Brain Rot Killer</string>
     <string name="accessibility_service_label">ReclaimLife reel counter</string>
-    <string name="accessibility_service_description">Watches for scrolling inside Instagram Reels and YouTube Shorts so ReclaimLife can count reels against your daily limit and stop you once you hit it.</string>
+    <string name="accessibility_service_description">Watches for scrolling inside Instagram Reels and YouTube Shorts so ReclaimLife can count reels against your limit and offer your 2-minute swap once you reach it. It receives events from Instagram and YouTube only, and nothing it sees leaves your phone.</string>
     <string name="widget_description">Shows how many reels you\'ve watched today against your limit.</string>
+    <string name="overlay_paused">🌿 Paused · %1$s</string>
+    <string name="overlay_hourly_only">%1$s %2$d / %3$d this hour</string>
+    <string name="overlay_hourly">%1$d / %2$d this hour</string>
+    <plurals name="overlay_count">
+        <item quantity="one">%1$s %2$d / %3$d reel</item>
+        <item quantity="other">%1$s %2$d / %3$d reels</item>
+    </plurals>
+    <plurals name="overlay_count_with_extra">
+        <item quantity="one">%1$s %2$d / %3$d (+%4$d) reel</item>
+        <item quantity="other">%1$s %2$d / %3$d (+%4$d) reels</item>
+    </plurals>
 </resources>

@@ -6,9 +6,15 @@
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Optional: Android's per-app screen time, for the gate's "last 24 hours" figure. -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <!-- Merged in by WorkManager (via Glance) for network constraints, which nothing here uses.
+         The app has no internet access, so it shouldn't list network permissions either. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
     <application
-        android:name=".BrainRotKillerApp"
+        android:name=".ReclaimLifeApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -16,7 +22,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.BrainRotKiller">
+        android:theme="@style/Theme.ReclaimLife">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -36,7 +42,15 @@
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
             android:taskAffinity=""
-            android:theme="@style/Theme.BrainRotKiller" />
+            android:theme="@style/Theme.ReclaimLife" />
+
+        <activity
+            android:name=".ui.gate.GateActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:theme="@style/Theme.ReclaimLife" />
 
         <receiver
             android:name=".widget.ReelCounterWidgetReceiver"
