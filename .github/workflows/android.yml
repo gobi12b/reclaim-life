@@ -32,7 +32,10 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
+      # The action's default package list includes the long-removed 'tools', which fails sdkmanager.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       # Also validates the Gradle wrapper jar's checksum, and caches Gradle state between runs.
       - uses: gradle/actions/setup-gradle@v4
@@ -79,7 +82,10 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
+      # The action's default package list includes the long-removed 'tools', which fails sdkmanager.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - uses: gradle/actions/setup-gradle@v4
 
