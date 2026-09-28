@@ -93,8 +93,7 @@ fun AppPickerSheet(current: List<TrackedApp>, onDismiss: () -> Unit, onSave: (Li
         ) {
             Text("Your apps", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
             Text(
-                "Each one shows up in your stats, and can get Pause before opening. " +
-                    "Reels are counted in Instagram and YouTube only. Removing an app keeps its history.",
+                "Reels are counted in Instagram and YouTube only.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
@@ -109,7 +108,7 @@ fun AppPickerSheet(current: List<TrackedApp>, onDismiss: () -> Unit, onSave: (Li
                     .padding(top = 12.dp)
             )
             Text(
-                "${pending.size} of $MAX_TRACKED_APPS chosen" + if (full) " — remove one to add another" else "",
+                "${pending.size} of $MAX_TRACKED_APPS" + if (full) " · remove one to add" else "",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)

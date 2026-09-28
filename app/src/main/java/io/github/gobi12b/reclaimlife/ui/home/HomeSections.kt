@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,18 +75,11 @@ import kotlin.math.abs
  * under it. The logo is decorative here; the greeting is the heading.
  */
 @Composable
-internal fun HomeHeader(name: String, nowMs: Long, onSettings: () -> Unit, largeFont: Boolean) {
+internal fun HomeHeader(name: String, nowMs: Long, onSettings: () -> Unit, largeFont: Boolean, onPause: (() -> Unit)? = null) {
     val context = LocalContext.current
     val hourKey = nowMs / 3_600_000L
-    val hour = remember(hourKey) { Calendar.getInstance().apply { timeInMillis = nowMs }.get(Calendar.HOUR_OF_DAY) }
     val date = remember(hourKey) {
         DateUtils.formatDateTime(context, nowMs, DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_NO_YEAR)
-    }
-    val greeting = when (hour) {
-        in 5..11 -> "Good morning"
-        in 12..16 -> "Good afternoon"
-        in 17..21 -> "Good evening"
-        else -> "Hello"
     }
     Row(
         verticalAlignment = if (largeFont) Alignment.Top else Alignment.CenterVertically,
@@ -95,18 +90,22 @@ internal fun HomeHeader(name: String, nowMs: Long, onSettings: () -> Unit, large
         SproutBadge(modifier = Modifier.clearAndSetSemantics { }, size = 36.dp)
         Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
             Text(
-                text = if (name.isEmpty()) greeting else "$greeting, $name",
+                text = name.ifEmpty { date },
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.semantics { heading() }
             )
-            Text(
-                text = date,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp)
-            )
+            if (name.isNotEmpty()) {
+                Text(
+                    text = date,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
         }
+        // Pause sits up top where it's easy to find; the sheet it opens still asks the questions.
+        if (onPause != null) PauseTrackingButton(onPause = onPause)
         IconButton(onClick = onSettings, modifier = Modifier.semantics { contentDescription = "Settings" }) {
             GearIcon(MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -114,15 +113,21 @@ internal fun HomeHeader(name: String, nowMs: Long, onSettings: () -> Unit, large
 }
 
 /**
- * Last on Home and deliberately quiet: pausing is allowed, not encouraged, and it still goes
- * through the pause sheet's friction. Hidden while paused, when the banner offers Resume instead.
+ * In Home's header, easy to find: pausing is allowed, and it still goes through the pause
+ * sheet's friction. Hidden while paused, when the banner offers Resume instead.
  */
 @Composable
 internal fun PauseTrackingButton(onPause: () -> Unit, modifier: Modifier = Modifier) {
-    val color = MaterialTheme.colorScheme.onSurfaceVariant
-    TextButton(onClick = onPause, modifier = modifier.heightIn(min = 48.dp)) {
-        PauseBars(color = color, modifier = Modifier.size(16.dp))
-        Text("Pause tracking", style = MaterialTheme.typography.labelLarge, color = color, modifier = Modifier.padding(start = 8.dp))
+    val color = MaterialTheme.colorScheme.onSurface
+    OutlinedButton(
+        onClick = onPause,
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+        modifier = modifier
+            .heightIn(min = 40.dp)
+            .semantics { contentDescription = "Pause tracking" }
+    ) {
+        PauseBars(color = color, modifier = Modifier.size(14.dp))
+        Text("Pause", style = MaterialTheme.typography.labelLarge, color = color, modifier = Modifier.padding(start = 6.dp))
     }
 }
 
@@ -130,7 +135,7 @@ internal fun PauseTrackingButton(onPause: () -> Unit, modifier: Modifier = Modif
 internal fun trend(totalMs: Long, previousMs: Long): Pair<TrendDirection, String> {
     val diff = totalMs - previousMs
     return when {
-        abs(diff) < 60_000L -> TrendDirection.SAME to "About the same as the day before"
+        abs(diff) < 60_000L -> TrendDirection.SAME to "Same as the day before"
         diff < 0 -> TrendDirection.DOWN to "${formatUsage(-diff)} less than the day before"
         else -> TrendDirection.UP to "${formatUsage(diff)} more than the day before"
     }
@@ -395,7 +400,6 @@ internal fun WeekSection(
     // but the strip still rolls over to a new day within the hour after midnight.
     val hourKey = todayMs / (60 * 60 * 1000L)
     val cells = remember(dayHistory, hourKey) { lastDays(dayHistory, todayMs) }
-    val streak = remember(dayHistory, hourKey) { currentStreak(dayHistory, todayMs) }
     val weekdays = remember(cells) {
         val parse = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val name = SimpleDateFormat("EEEE", Locale.getDefault())
@@ -403,15 +407,7 @@ internal fun WeekSection(
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (largeFont) {
-            SectionHeading("This week")
-            if (streak > 0) StreakChip(streak, Modifier.padding(top = 8.dp))
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SectionHeading("This week", Modifier.weight(1f))
-                if (streak > 0) StreakChip(streak)
-            }
-        }
+        SectionHeading("This week")
         Row(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier
@@ -444,10 +440,9 @@ internal fun WeekSection(
         }
         Text(
             text = if (daysWithinLimit > 0 || daysExceededLimit > 0) {
-                "All time: $daysWithinLimit " + (if (daysWithinLimit == 1) "day" else "days") +
-                    " within limit · $daysExceededLimit over"
+                "All time: $daysWithinLimit within · $daysExceededLimit over"
             } else {
-                "Today closes out at midnight — your first dot fills in tomorrow."
+                "First dot fills in tomorrow."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -65,6 +65,7 @@ import io.github.gobi12b.reclaimlife.data.CALM_SCREEN_FROM_PAUSE
 import io.github.gobi12b.reclaimlife.data.INTENTION_MAX_CHARS
 import io.github.gobi12b.reclaimlife.data.PauseDuration
 import io.github.gobi12b.reclaimlife.data.PauseReason
+import io.github.gobi12b.reclaimlife.data.pauseTreeLine
 import io.github.gobi12b.reclaimlife.data.formatAvailableAt
 import io.github.gobi12b.reclaimlife.data.intentionIsValid
 import io.github.gobi12b.reclaimlife.ui.gate.SwayingSprout
@@ -94,7 +95,10 @@ fun PauseSheet(
     calmLine: String,
     onDismiss: () -> Unit,
     onStart: (PauseDuration, PauseReason) -> Unit,
-    onScheduleRestOfToday: (PauseReason, String) -> Unit
+    onScheduleRestOfToday: (PauseReason, String) -> Unit,
+    /** The tree's name, or null to leave out the tree line (it's already resting today). */
+    treeName: String? = null,
+    pausedTodayMs: Long = 0L
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var step by remember { mutableStateOf(PauseStep.CHOOSE) }
@@ -121,6 +125,7 @@ fun PauseSheet(
                     duration = duration,
                     reason = reason,
                     restOfTodayAvailableAtMs = restOfTodayAvailableAtMs,
+                    treeLine = treeName?.let { pauseTreeLine(it, duration, pausedTodayMs) },
                     onDurationChange = { duration = it },
                     onReasonChange = { reason = it },
                     onNext = {
@@ -166,13 +171,14 @@ private fun ChooseStep(
     duration: PauseDuration,
     reason: PauseReason?,
     restOfTodayAvailableAtMs: Long?,
+    treeLine: String?,
     onDurationChange: (PauseDuration) -> Unit,
     onReasonChange: (PauseReason) -> Unit,
     onNext: () -> Unit
 ) {
     val restLocked = restOfTodayAvailableAtMs != null
     val availability = restOfTodayAvailableAtMs?.let { formatAvailableAt(it, System.currentTimeMillis()) }
-    SheetTitle("Take a break?", "Tracking and limits turn back on by themselves.")
+    SheetTitle("Pause tracking?", "Turns back on by itself.")
 
     Text("How long", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -196,10 +202,19 @@ private fun ChooseStep(
     }
     if (availability != null) {
         Text(
-            text = "Rest of today: $availability. It's there once every 3 days.",
+            text = "Rest of today: $availability. Once every 3 days.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth()
+        )
+    }
+    // Follows the selected length, so the choice is made knowing what the tree does.
+    treeLine?.let {
+        Text(
+            it,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         )
     }
 
@@ -229,7 +244,7 @@ private fun ChooseStep(
         )
     }
     if (reason == null) {
-        Text("Pick what it's for to continue.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Pick one to continue.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -250,7 +265,7 @@ private fun CalmStep(
         }
     }
     val hour = duration == PauseDuration.ONE_HOUR
-    SheetTitle(if (hour) "An hour off?" else "A calm moment first", "Tracking and limits turn back on by themselves.")
+    SheetTitle(if (hour) "An hour off?" else "A calm moment first", "Turns back on by itself.")
     Box(contentAlignment = Alignment.Center) {
         SwayingSprout()
         if (secondsLeft > 0) {
@@ -387,7 +402,7 @@ private fun rememberNeedsHoldAlternative(): Boolean {
 private fun IntentionStep(onStart: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
     val valid = intentionIsValid(text)
-    SheetTitle("What's the plan for tonight?", "A few words, just for you. It's deleted when the pause ends.")
+    SheetTitle("What's the plan?", "Just for you. Deleted after.")
     OutlinedTextField(
         value = text,
         onValueChange = { if (it.length <= INTENTION_MAX_CHARS) text = it },
@@ -396,7 +411,7 @@ private fun IntentionStep(onStart: (String) -> Unit) {
         modifier = Modifier.fillMaxWidth()
     )
     Text(
-        text = "Tracking pauses a minute after you start, and you can cancel until then.",
+        text = "Starts in a minute. You can cancel.",
         fontSize = 12.sp,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant,

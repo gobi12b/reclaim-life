@@ -1,17 +1,17 @@
 <resources>
     <string name="app_name">ReclaimLife</string>
     <string name="accessibility_service_label">ReclaimLife reel counter</string>
-    <string name="accessibility_service_description">Shows a moment to pause when you open an app you chose to watch, and counts reels in Instagram Reels and YouTube Shorts so ReclaimLife can offer your 2-minute swap at your limit. It receives events only from the apps you chose, and nothing it sees leaves your phone.</string>
-    <string name="widget_description">Shows how many reels you have left today, and the time you\'ve won back.</string>
-    <string name="overlay_paused">🌿 Paused · %1$s</string>
-    <string name="overlay_hourly_only">%1$s %2$d / %3$d this hour</string>
+    <string name="accessibility_service_description">Counts reels in Instagram and YouTube and shows a pause when you open apps you picked. Only reads the apps you chose. Nothing leaves your phone.</string>
+    <string name="widget_description">Reels left today and time saved.</string>
+    <string name="overlay_paused">Paused · %1$s</string>
+    <string name="overlay_hourly_only">%1$d / %2$d this hour</string>
     <string name="overlay_hourly">%1$d / %2$d this hour</string>
     <plurals name="overlay_count">
-        <item quantity="one">%1$s %2$d / %3$d reel</item>
-        <item quantity="other">%1$s %2$d / %3$d reels</item>
+        <item quantity="one">%1$d / %2$d reel</item>
+        <item quantity="other">%1$d / %2$d reels</item>
     </plurals>
     <plurals name="overlay_count_with_extra">
-        <item quantity="one">%1$s %2$d / %3$d (+%4$d) reel</item>
-        <item quantity="other">%1$s %2$d / %3$d (+%4$d) reels</item>
+        <item quantity="one">%1$d / %2$d (+%3$d) reel</item>
+        <item quantity="other">%1$d / %2$d (+%3$d) reels</item>
     </plurals>
 </resources>

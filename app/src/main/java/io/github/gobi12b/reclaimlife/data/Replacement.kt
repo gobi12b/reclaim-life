@@ -7,9 +7,10 @@ package io.github.gobi12b.reclaimlife.data
 const val SWAP_SECONDS = 120
 
 enum class ReplacementActivity(val label: String, val emoji: String, val blurb: String) {
-    BREATHING("Breathe", "🌬️", "A slow, guided breathing exercise."),
-    FLASHCARDS("Flashcards", "🃏", "Flip through a quick deck and learn something."),
-    JOURNALING("Journal", "✍️", "Answer one small prompt, just for you.");
+    BREATHING("Breathe", "🌬️", "Slow, guided breaths."),
+    FLASHCARDS("Flashcards", "🃏", "Learn something quick."),
+    JOURNALING("Journal", "✍️", "Answer one small prompt."),
+    READING("Read", "📖", "A short poem, quote or idea.");
 
     companion object {
         fun fromStored(value: String?): ReplacementActivity =
@@ -74,4 +75,65 @@ val JOURNAL_PROMPTS = listOf(
     "If today had a title, what would it be?",
     "What's something you're grateful for right now?",
     "What's one thing you've been meaning to start?"
+)
+
+enum class ReadingKind(val label: String) { POEM("Poem"), QUOTE("Quote"), IDEA("Idea") }
+
+/** One short read. Poems and quotes are public domain; ideas are ours, with an optional link to go deeper. */
+data class Reading(val kind: ReadingKind, val text: String, val source: String? = null, val url: String? = null)
+
+val READINGS = listOf(
+    Reading(
+        ReadingKind.POEM,
+        "Nature's first green is gold,\nHer hardest hue to hold.\nHer early leaf's a flower;\nBut only so an hour.\n" +
+            "Then leaf subsides to leaf.\nSo Eden sank to grief,\nSo dawn goes down to day.\nNothing gold can stay.",
+        "Robert Frost, Nothing Gold Can Stay"
+    ),
+    Reading(
+        ReadingKind.POEM,
+        "\"Hope\" is the thing with feathers -\nThat perches in the soul -\nAnd sings the tune without the words -\nAnd never stops - at all -",
+        "Emily Dickinson"
+    ),
+    Reading(
+        ReadingKind.POEM,
+        "To see a World in a Grain of Sand\nAnd a Heaven in a Wild Flower,\nHold Infinity in the palm of your hand\nAnd Eternity in an hour.",
+        "William Blake, Auguries of Innocence"
+    ),
+    Reading(ReadingKind.QUOTE, "It is not that we have a short time to live, but that we waste a lot of it.", "Seneca, On the Shortness of Life"),
+    Reading(ReadingKind.QUOTE, "Our life is frittered away by detail. Simplify, simplify.", "Henry David Thoreau, Walden"),
+    Reading(ReadingKind.QUOTE, "The happiness of your life depends upon the quality of your thoughts.", "Marcus Aurelius, Meditations"),
+    Reading(ReadingKind.QUOTE, "A journey of a thousand miles begins with a single step.", "Lao Tzu, Tao Te Ching"),
+    Reading(ReadingKind.QUOTE, "The best time to plant a tree was twenty years ago. The second best time is now.", "Proverb"),
+    Reading(
+        ReadingKind.IDEA,
+        "Every habit has a cue, a routine and a reward. You don't have to fight the cue. Swap the routine and keep the reward.",
+        "Atomic Habits, summarised",
+        "https://jamesclear.com/atomic-habits-summary"
+    ),
+    Reading(
+        ReadingKind.IDEA,
+        "Boredom isn't a problem to fix. A wandering mind is often where your best ideas start.",
+        "Manoush Zomorodi, TED",
+        "https://www.ted.com/talks/manoush_zomorodi_how_boredom_can_lead_to_your_most_brilliant_ideas"
+    ),
+    Reading(
+        ReadingKind.IDEA,
+        "Feeds have no bottom on purpose. Stopping is a decision the app won't make for you, and it gets easier with practice.",
+        "Adam Alter, TED",
+        "https://www.ted.com/talks/adam_alter_why_our_screens_make_us_less_happy"
+    ),
+    Reading(
+        ReadingKind.IDEA,
+        "Small choices compound. One better decision a day doesn't feel like much, until you look back after a month.",
+    ),
+    Reading(
+        ReadingKind.IDEA,
+        "Where your attention goes, your life goes. Spending it on purpose is the whole game.",
+    ),
+    Reading(
+        ReadingKind.IDEA,
+        "Tech works best as a tool you pick up, not a place you live. Turning off one notification is a real start.",
+        "Center for Humane Technology",
+        "https://www.humanetech.com/take-control"
+    )
 )

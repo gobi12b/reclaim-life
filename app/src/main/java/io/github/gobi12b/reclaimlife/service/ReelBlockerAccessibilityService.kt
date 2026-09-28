@@ -12,11 +12,11 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.widget.LinearLayout
 import android.widget.TextView
 import io.github.gobi12b.reclaimlife.ReclaimLifeApp
 import io.github.gobi12b.reclaimlife.R
 import io.github.gobi12b.reclaimlife.data.LimitMode
-import io.github.gobi12b.reclaimlife.data.Mood
 import io.github.gobi12b.reclaimlife.data.DEFAULT_GATE_WAIT_MS
 import io.github.gobi12b.reclaimlife.data.DEFAULT_TRACKED_APPS
 import io.github.gobi12b.reclaimlife.data.PauseDuration
@@ -99,7 +99,9 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
     private var surfaceCheckedPackage: String? = null
     private var onReelSurfaceCached: Boolean = false
 
-    private var overlayView: TextView? = null
+    private var overlayView: LinearLayout? = null
+    private var counterText: TextView? = null
+    private var counterPlant: CounterPlantView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val leaveSessionRunnable = Runnable {
         overlayView?.visibility = View.GONE
@@ -418,7 +420,11 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
 
     private fun registerReels(packageName: String, reels: Int) {
         serviceScope.launch {
-            val newCount = app.reelUsageRepository.incrementAndGet(packageName, reels)
+            // Read fresh rather than from the collected fields, which start unset: the first reel of
+            // a new day also closes yesterday's outcome against these.
+            val limit = app.settingsRepository.dailyReelLimit.first()
+            val mode = app.settingsRepository.limitMode.first()
+            val newCount = app.reelUsageRepository.incrementAndGet(packageName, reels, limit, mode)
             todayCount = newCount
             // The stored times arrive via the flow shortly; mirror them now so the block is immediate.
             val now = System.currentTimeMillis()
@@ -447,14 +453,22 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         startActivity(intent)
     }
 
-    private fun ensureOverlayView(): TextView {
+    private fun ensureOverlayView(): LinearLayout {
         overlayView?.let { return it }
 
         val density = resources.displayMetrics.density
-        val view = TextView(this).apply {
+        val plant = CounterPlantView(this)
+        val text = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 18f
-            setPadding((20 * density).toInt(), (12 * density).toInt(), (20 * density).toInt(), (12 * density).toInt())
+            setPadding((8 * density).toInt(), 0, 0, 0)
+        }
+        val view = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(plant)
+            addView(text)
+            setPadding((16 * density).toInt(), (10 * density).toInt(), (20 * density).toInt(), (10 * density).toInt())
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 28 * density
@@ -474,6 +488,8 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         }
         windowManager.addView(view, params)
         overlayView = view
+        counterText = text
+        counterPlant = plant
         return view
     }
 
@@ -498,27 +514,35 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
     }
 
     private fun refreshOverlayText() {
-        val view = overlayView ?: return
-        if (view.visibility != View.VISIBLE) return
+        val container = overlayView ?: return
+        val view = counterText ?: return
+        if (container.visibility != View.VISIBLE) return
         if (trackingPaused) {
+            counterPlant?.setProgress(0f)
             view.text = getString(R.string.overlay_paused, formatPauseRemaining(pausedUntilMs - System.currentTimeMillis()))
             return
         }
         val thisHour = reelsInWindow(recentReelTimes, System.currentTimeMillis()).size
         if (!limitMode.usesDaily) {
-            val mood = Mood.forProgress(thisHour, hourlyLimit)
-            view.text = getString(R.string.overlay_hourly_only, mood.emoji, thisHour, hourlyLimit)
+            counterPlant?.setProgress(if (hourlyLimit > 0) thisHour.toFloat() / hourlyLimit else 0f)
+            view.text = getString(R.string.overlay_hourly_only, thisHour, hourlyLimit)
             return
         }
-        val mood = Mood.forProgress(todayCount, effectiveLimit)
+        // The plant shows how close the limit is; the text keeps the exact numbers.
+        counterPlant?.setProgress(
+            maxOf(
+                if (effectiveLimit > 0) todayCount.toFloat() / effectiveLimit else 0f,
+                if (limitMode.usesHourly && hourlyLimit > 0) thisHour.toFloat() / hourlyLimit else 0f
+            )
+        )
         // Same shape as Home and the widget: the total you're blocked at, with any extra called
         // out, so "190" never appears without explaining where the extra 4 came from.
         val dailyText = if (extraAllowance > 0) {
             resources.getQuantityString(
-                R.plurals.overlay_count_with_extra, effectiveLimit, mood.emoji, todayCount, effectiveLimit, extraAllowance
+                R.plurals.overlay_count_with_extra, effectiveLimit, todayCount, effectiveLimit, extraAllowance
             )
         } else {
-            resources.getQuantityString(R.plurals.overlay_count, effectiveLimit, mood.emoji, todayCount, effectiveLimit)
+            resources.getQuantityString(R.plurals.overlay_count, effectiveLimit, todayCount, effectiveLimit)
         }
         view.text = if (limitMode.usesHourly) {
             dailyText + "\n" + getString(R.string.overlay_hourly, thisHour, hourlyLimit)
@@ -538,6 +562,8 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         mainHandler.removeCallbacks(foregroundCheckRunnable)
         overlayView?.let { runCatching { windowManager.removeView(it) } }
         overlayView = null
+        counterText = null
+        counterPlant = null
         serviceJob.cancel()
     }
 

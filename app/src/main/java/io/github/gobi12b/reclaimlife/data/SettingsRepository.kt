@@ -2,6 +2,7 @@ package io.github.gobi12b.reclaimlife.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -32,6 +33,9 @@ val GATE_WAIT_OPTIONS_MS = listOf(2_000L, 5_000L, 10_000L)
 
 /** Onboarding with the "Your apps" step. Installs finished before it get a Home card instead. */
 const val CURRENT_ONBOARDING_VERSION = 2
+
+/** Trimmed and capped at [TREE_NAME_MAX]; blank clears the name. */
+fun cleanTreeName(name: String): String = name.trim().take(TREE_NAME_MAX).trim()
 
 /** Today's insight, frozen for the day so it doesn't flicker as minutes tick. */
 data class CachedInsight(val dateKey: String, val insight: HomeInsight)
@@ -66,6 +70,12 @@ class SettingsRepository(private val context: Context) {
         val INSIGHT_ACTION = stringPreferencesKey("insight_action")
         val INSIGHT_ACTION_LABEL = stringPreferencesKey("insight_action_label")
         val INSIGHT_ACTION_APP = stringPreferencesKey("insight_action_app")
+        /** Every change to a limit or the mode, for two weeks — see [LimitChange]. Values only. */
+        val LIMIT_CHANGE_LOG = stringPreferencesKey("limit_change_log")
+        val TREE_NAME = stringPreferencesKey("tree_name")
+        val TREE_INTRO_SEEN = booleanPreferencesKey("tree_intro_seen")
+        val TREE_PLANTED_AT_MS = longPreferencesKey("tree_planted_at_ms")
+        val TREE_BEST_STREAK = intPreferencesKey("tree_best_streak")
     }
 
     val onboardingComplete: Flow<Boolean> =
@@ -234,15 +244,72 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setDailyReelLimit(limit: Int) {
-        context.settingsDataStore.edit { it[Keys.DAILY_REEL_LIMIT] = limit.coerceAtLeast(MIN_DAILY_REEL_LIMIT) }
+        context.settingsDataStore.edit { prefs ->
+            val to = limit.coerceAtLeast(MIN_DAILY_REEL_LIMIT)
+            val from = prefs[Keys.DAILY_REEL_LIMIT] ?: DEFAULT_DAILY_REEL_LIMIT
+            prefs[Keys.DAILY_REEL_LIMIT] = to
+            if (to != from) logLimitChange(prefs, LimitKind.DAILY, from.toString(), to.toString())
+        }
     }
 
     suspend fun setHourlyReelLimit(limit: Int) {
-        context.settingsDataStore.edit { it[Keys.HOURLY_REEL_LIMIT] = limit.coerceAtLeast(MIN_DAILY_REEL_LIMIT) }
+        context.settingsDataStore.edit { prefs ->
+            val to = limit.coerceAtLeast(MIN_DAILY_REEL_LIMIT)
+            val from = prefs[Keys.HOURLY_REEL_LIMIT] ?: DEFAULT_HOURLY_REEL_LIMIT
+            prefs[Keys.HOURLY_REEL_LIMIT] = to
+            if (to != from) logLimitChange(prefs, LimitKind.HOURLY, from.toString(), to.toString())
+        }
     }
 
     suspend fun setLimitMode(mode: LimitMode) {
-        context.settingsDataStore.edit { it[Keys.LIMIT_MODE] = mode.name }
+        context.settingsDataStore.edit { prefs ->
+            val from = LimitMode.fromStored(prefs[Keys.LIMIT_MODE])
+            prefs[Keys.LIMIT_MODE] = mode.name
+            if (mode != from) logLimitChange(prefs, LimitKind.MODE, from.name, mode.name)
+        }
+    }
+
+    /** Written in the same edit as the value, so the log and the setting never disagree. */
+    private fun logLimitChange(prefs: MutablePreferences, kind: LimitKind, from: String, to: String) {
+        val now = System.currentTimeMillis()
+        val log = parseLimitChanges(prefs[Keys.LIMIT_CHANGE_LOG]) + LimitChange(now, kind, from, to)
+        prefs[Keys.LIMIT_CHANGE_LOG] = serializeLimitChanges(log, now)
+    }
+
+    /** Limit changes over the last two weeks, oldest first. A raise not put back rests the tree for the day. */
+    val limitChanges: Flow<List<LimitChange>> =
+        context.settingsDataStore.data.map { parseLimitChanges(it[Keys.LIMIT_CHANGE_LOG]) }
+
+    /** The tree's name, trimmed; empty means none ("Your tree"). */
+    val treeName: Flow<String> = context.settingsDataStore.data.map { it[Keys.TREE_NAME].orEmpty() }
+
+    val treeIntroSeen: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.TREE_INTRO_SEEN] ?: false }
+
+    val treePlantedAtMs: Flow<Long?> = context.settingsDataStore.data.map { it[Keys.TREE_PLANTED_AT_MS] }
+
+    /** Meet your tree is done: the name (optional), seen, and the planting day (kept if already set). */
+    suspend fun completeTreeIntro(name: String, nowMs: Long) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[Keys.TREE_NAME] = cleanTreeName(name)
+            prefs[Keys.TREE_INTRO_SEEN] = true
+            if (prefs[Keys.TREE_PLANTED_AT_MS] == null) prefs[Keys.TREE_PLANTED_AT_MS] = nowMs
+        }
+    }
+
+    /** The longest streak ever reached; keepsakes come from it, so it only goes up. */
+    val treeBestStreak: Flow<Int> = context.settingsDataStore.data.map { it[Keys.TREE_BEST_STREAK] ?: 0 }
+
+    suspend fun raiseTreeBestStreak(streak: Int) {
+        context.settingsDataStore.edit { if (streak > (it[Keys.TREE_BEST_STREAK] ?: 0)) it[Keys.TREE_BEST_STREAK] = streak }
+    }
+
+    suspend fun setTreeName(name: String) {
+        context.settingsDataStore.edit { it[Keys.TREE_NAME] = cleanTreeName(name) }
+    }
+
+    /** Upgrades date the tree from their first ledger day. Only sets it once. */
+    suspend fun setTreePlantedAtIfUnset(atMs: Long) {
+        context.settingsDataStore.edit { if (it[Keys.TREE_PLANTED_AT_MS] == null) it[Keys.TREE_PLANTED_AT_MS] = atMs }
     }
 
     suspend fun setSwap(activity: ReplacementActivity, deck: FlashcardDeck) {

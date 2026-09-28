@@ -114,7 +114,7 @@ fun InsightsScreen(modifier: Modifier = Modifier) {
         Column {
             Text("Insights", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
             Text(
-                "Your ${installed.size} apps over the last $INSIGHT_DAYS days",
+                "Last $INSIGHT_DAYS days",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -141,9 +141,9 @@ fun InsightsScreen(modifier: Modifier = Modifier) {
 
         if (!insights.fromSystem) {
             InsightCard {
-                Text("Only part of the picture", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Partial data", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "These charts only include time since ReclaimLife started timing. Allow Usage access to read your full week from Android — it stays on this phone.",
+                    "Allow Usage access to see your full week. It stays on your phone.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -178,7 +178,7 @@ private fun ReelsTodayCard(reelsByApp: Map<String, Int>, tracked: List<TrackedAp
             Text("${rows.sumOf { it.second }}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
         if (rows.isEmpty()) {
-            Text("None yet today.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+            Text("None yet.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         }
         rows.forEach { (key, n) ->
             val slot = tracked.firstOrNull { it.packageName == key }?.slot
@@ -214,9 +214,9 @@ private fun StatGrid(insights: UsageInsights, skipped: Int, gateShown: Int) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             StatTile("Average visit", formatUsage(insights.averageVisitMs), "per open", Modifier.weight(1f))
             StatTile(
-                "Skipped at the pause",
+                "Skipped",
                 if (gateShown == 0) "—" else "$skipped of $gateShown",
-                if (gateShown == 0) "counting starts now" else "times you chose not to open",
+                if (gateShown == 0) "starts now" else "at the pause",
                 Modifier.weight(1f),
                 highlight = skipped > 0
             )
@@ -420,7 +420,7 @@ private fun HourChartCard(insights: UsageInsights) {
     InsightCard {
         Text("When you scroll", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
         Text(
-            "Time in each hour of the day, added up over the week",
+            "By hour, this week",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -451,7 +451,7 @@ private fun HourChartCard(insights: UsageInsights) {
         if (selected in 0..23) {
             Text(
                 text = "${hourLabel(selected)}–${hourLabel((selected + 1) % 24)}: ${formatUsage(hours[selected])} this week" +
-                    if (selected == insights.peakHour) " · your busiest hour" else "",
+                    if (selected == insights.peakHour) " · busiest" else "",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.padding(top = 10.dp)
@@ -466,23 +466,20 @@ private fun PatternsCard(insights: UsageInsights) {
     val busiest = insights.days.maxByOrNull { it.totalMs }?.takeIf { it.totalMs > 0 }
     val peak = insights.peakHour
     val lines = buildList {
-        if (busiest != null) add("📅" to "Your biggest day was ${dayName.format(Date(busiest.dayStartMs))}, with ${formatUsage(busiest.totalMs)}.")
+        if (busiest != null) add("Biggest day: ${dayName.format(Date(busiest.dayStartMs))}, ${formatUsage(busiest.totalMs)}.")
         if (peak != null) {
-            add("🕘" to "Most of your scrolling happens around ${hourLabel(peak)}. A plan for that hour — a walk, a call, a book — makes skipping easier.")
-            if (peak >= 21 || peak < 5) add("🌙" to "Late-night scrolling cuts into sleep. Try charging your phone outside the bedroom.")
+            add("You scroll most around ${hourLabel(peak)}. Plan something for that hour.")
+            if (peak >= 21 || peak < 5) add("Late scrolling hurts sleep. Charge your phone outside the bedroom.")
         }
         if (insights.averageVisitMs >= 10 * 60_000L) {
-            add("⏳" to "Visits average ${formatUsage(insights.averageVisitMs)}. Deciding what you came for before opening helps you leave sooner.")
+            add("Visits average ${formatUsage(insights.averageVisitMs)}. Know why you're opening it.")
         }
-        if (isEmpty()) add("🌱" to "Not much to show yet — check back after a few days of use.")
+        if (isEmpty()) add("Patterns show up after a few days of use.")
     }
     InsightCard {
-        Text("Patterns", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-        lines.forEach { (emoji, text) ->
-            Row(modifier = Modifier.padding(top = 12.dp)) {
-                Text(emoji, fontSize = 18.sp, modifier = Modifier.semantics { contentDescription = "" })
-                Text(text, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp))
-            }
+        Text("Patterns", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+        lines.forEach { text ->
+            Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp))
         }
     }
 }

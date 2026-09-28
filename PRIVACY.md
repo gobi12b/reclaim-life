@@ -1,6 +1,6 @@
 # ReclaimLife privacy policy
 
-_Last updated: 28 September 2026_
+_Last updated: 29 September 2026_
 
 ReclaimLife (Android package `io.github.gobi12b.reclaimlife`) puts a daily limit on Instagram
 Reels and YouTube Shorts. This policy covers exactly what the app accesses, what it keeps, and
@@ -82,7 +82,13 @@ ReclaimLife stores the following in its private app storage:
 - when tracking was off (the counter switched off or the phone off), deleted after two weeks;
 - your pauses (start, end, length and reason), deleted after 90 days;
 - whether you chose Skip or Continue on the pause screen, and when, deleted after about a week;
-- your Pause before opening choices and when your day starts.
+- your Pause before opening choices and when your day starts;
+- your tree's name (optional), the day you planted it, and your longest streak (so milestones
+  you've earned stay on your tree);
+- for each day, whether your tree grew or rested and how much it grew, kept for up to 400 days
+  (older days are kept only as one running total);
+- when you changed a limit, with the old and new number, deleted after two weeks;
+- how many 2-minute swaps you finished each day, deleted after two weeks.
 
 The home-screen widget shows the same count and limit. Uninstalling the app, or clearing its
 storage in Settings → Apps → ReclaimLife, deletes all of it.
@@ -90,7 +96,7 @@ storage in Settings → Apps → ReclaimLife, deletes all of it.
 ## Android backup
 
 ReclaimLife uses Android's Auto Backup so your settings and history survive a new phone. Only
-the settings, usage and daily-usage files described above are included. The typed pause plan and
+the settings, usage and daily-usage files described above (including your tree) are included. The typed pause plan and
 widget state are not. If backup is turned on for your Google account, Android saves these files to your
 Google account's backup storage (or copies them during a device-to-device transfer), under
 Google's terms. ReclaimLife itself does not send them anywhere. You can turn this off in your

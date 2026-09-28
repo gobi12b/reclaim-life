@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -49,7 +51,7 @@ import io.github.gobi12b.reclaimlife.ui.common.isInstalled
 import io.github.gobi12b.reclaimlife.ui.common.rememberTrackedApps
 import java.util.Calendar
 
-private enum class Kind(val verb: String, val emoji: String) { WATCH("Watch", "▶️"), LISTEN("Listen", "🎧"), READ("Read", "📖") }
+private enum class Kind(val verb: String) { WATCH("Watch"), LISTEN("Listen"), READ("Read") }
 
 /** [minutes] is roughly how long it takes — in a screen-time app, what a link costs is worth saying up front. */
 private data class Resource(val kind: Kind, val source: String, val minutes: Int, val title: String, val why: String, val url: String)
@@ -60,7 +62,7 @@ private data class Resource(val kind: Kind, val source: String, val minutes: Int
 private val WATCH = listOf(
     Resource(
         Kind.WATCH, "TED", 11, "Why our screens make us less happy",
-        "Why it's so hard to put the phone down — and the small rules that help.",
+        "Why it's hard to put the phone down.",
         "https://www.ted.com/talks/adam_alter_why_our_screens_make_us_less_happy"
     ),
     Resource(
@@ -75,7 +77,7 @@ private val WATCH = listOf(
     ),
     Resource(
         Kind.LISTEN, "Huberman Lab", 120, "Controlling your dopamine for motivation, focus & satisfaction",
-        "How dopamine peaks and dips work, and why endless novelty leaves you flat. A long one — good for a walk.",
+        "How dopamine works. Good for a walk.",
         "https://www.hubermanlab.com/episode/controlling-your-dopamine-for-motivation-focus-and-satisfaction"
     )
 )
@@ -83,40 +85,40 @@ private val WATCH = listOf(
 private val READ = listOf(
     Resource(
         Kind.READ, "Center for Humane Technology", 5, "Control your tech use",
-        "Practical steps to make your phone work for you, not the other way round.",
+        "Make your phone work for you.",
         "https://www.humanetech.com/take-control"
     ),
     Resource(
         Kind.READ, "Stanford Medicine", 6, "Addictive potential of social media, explained",
-        "Why feeds can be habit-forming, explained by a psychiatrist.",
+        "Why feeds are habit-forming.",
         "https://med.stanford.edu/news/insights/2021/10/addictive-potential-of-social-media-explained.html"
     ),
     Resource(
         Kind.READ, "James Clear", 15, "Atomic Habits summary",
-        "Swapping a habit beats fighting it — the idea behind your 2-minute swap.",
+        "Swapping a habit beats fighting it.",
         "https://jamesclear.com/atomic-habits-summary"
     )
 )
 
 /** A small thing to try, with at most one action that takes you straight to where it's done. */
-private data class Tip(val emoji: String, val text: String, val actionLabel: String? = null, val action: ((Context) -> Unit)? = null)
+private data class Tip(val text: String, val actionLabel: String? = null, val action: ((Context) -> Unit)? = null)
 
 /** Tips name the apps you actually chose, not a fixed pair. */
 private fun tips(appNames: String, firstApp: String?): List<Tip> = listOf(
     Tip(
-        "🔕", "Turn off notifications for $appNames — you'll check in on your terms, not theirs.",
+        "Turn off notifications for $appNames.",
         firstApp?.let { "Open notification settings" },
         firstApp?.let { pkg -> { context: Context -> openNotificationSettings(context, pkg) } }
     ),
-    Tip("📱", "Move $appNames off your home screen, into a folder on the last page. One extra swipe is often enough."),
-    Tip("🛏️", "Charge your phone outside the bedroom tonight. Mornings start with you, not a feed."),
+    Tip("Move $appNames off your home screen."),
+    Tip("Charge your phone outside the bedroom tonight."),
     Tip(
-        "⚫", "Try grayscale for an evening — feeds lose a lot of their pull without colour. It's in Digital Wellbeing or Accessibility.",
+        "Try grayscale for an evening. Feeds lose their pull.",
         "Open Accessibility settings",
         { context -> launch(context, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
     ),
-    Tip("🎯", "Before you open an app, say what you came for. When it's done, close it."),
-    Tip("🚶", "Next time you reach for your phone out of boredom, stand up and look out of a window for a minute.")
+    Tip("Before opening an app, say why. Then close it."),
+    Tip("Bored? Look out of a window for a minute.")
 )
 
 private fun launch(context: Context, intent: Intent) {
@@ -161,11 +163,6 @@ fun LearnScreen(modifier: Modifier = Modifier) {
     ) {
         Column(modifier = Modifier.padding(bottom = 4.dp)) {
             Text("Learn", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-            Text(
-                "Small things to try, and short talks and reads on getting your attention back.",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
 
         TipCard(allTips)
@@ -176,12 +173,7 @@ fun LearnScreen(modifier: Modifier = Modifier) {
         SectionTitle("Read")
         READ.forEach { ResourceCard(it) }
 
-        Text(
-            "Links open in your browser. ReclaimLife itself has no internet access.",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
-        )
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -222,10 +214,7 @@ private fun TipCard(tips: List<Tip>) {
             Text("Try this today", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
             AnimatedContent(targetState = tip, label = "tip", modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) { shown ->
                 Column {
-                    Row(modifier = Modifier.padding(top = 10.dp), verticalAlignment = Alignment.Top) {
-                        Text(shown.emoji, fontSize = 24.sp, modifier = Modifier.clearAndSetSemantics { })
-                        Text(shown.text, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 12.dp))
-                    }
+                    Text(shown.text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 14.dp)) {
                         if (shown.actionLabel != null && shown.action != null) {
                             FilledTonalButton(onClick = { shown.action.invoke(context) }) { Text(shown.actionLabel) }
@@ -262,15 +251,7 @@ private fun ResourceCard(resource: Resource) {
             }
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp))
-            ) {
-                Text(resource.kind.emoji, fontSize = 18.sp, modifier = Modifier.clearAndSetSemantics { })
-            }
-            Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(resource.title, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold)
                 Text(
                     "${resource.source} · ${lengthLabel(resource)}",

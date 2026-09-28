@@ -43,7 +43,7 @@ class HomeInsightTest {
     fun anAppAlreadyPausingIsNotOfferedAgain() {
         val insight = choose(last7 = week(64, 56), prev7 = week(60, 40))
         assertEquals(InsightKind.HEAVIER, insight.kind)
-        assertEquals("This week's been a bit heavier (about +20%). No stress — one 2-minute swap can reset the day.", insight.text)
+        assertEquals("A heavier week (about +20%). A quick swap can reset the day.", insight.text)
     }
 
     @Test
@@ -61,15 +61,15 @@ class HomeInsightTest {
         // Spec: 22% under baseline → insight #6, "about 20% less".
         val insight = choose(last7 = week(47, 31), baseline = mapOf(ig to 60.0, yt to 40.0))
         assertEquals(InsightKind.CUT, insight.kind)
-        assertEquals("You're scrolling about 20% less than when you started. Good job.", insight.text)
+        assertEquals("Scrolling down about 20% from your usual.", insight.text)
         assertNull(insight.actionLabel)
     }
 
     @Test
-    fun aBigCutUsesTheNicknameOnce() {
+    fun aBigCutIsStatedPlainly() {
         val insight = choose(last7 = week(40, 25), nickname = "Gobi")
         assertEquals(InsightKind.CUT_BIG, insight.kind)
-        assertEquals("You've cut your scrolling by about 35%. That's a real change — nice work, Gobi.", insight.text)
+        assertEquals("Scrolling down about 35% from your usual.", insight.text)
     }
 
     @Test

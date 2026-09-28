@@ -1,6 +1,17 @@
 package io.github.gobi12b.reclaimlife.ui.home
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.semantics.Role
+import io.github.gobi12b.reclaimlife.data.CalloutGlyph
+import io.github.gobi12b.reclaimlife.data.CalloutKind
+import io.github.gobi12b.reclaimlife.data.TreeState
+import io.github.gobi12b.reclaimlife.data.treeNameTitle
+import io.github.gobi12b.reclaimlife.data.treeTitleLine
+import kotlinx.coroutines.delay
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -58,6 +69,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
@@ -164,15 +177,120 @@ internal fun HeroNumberText(
     )
 }
 
-/** Keeps the plant at the bottom end, clear of the text; below it at large font. */
+/** Keeps the tree at the bottom end, clear of the text; below it at large font. */
 private fun Modifier.heroTextPadding(largeFont: Boolean): Modifier =
     if (largeFont) {
-        padding(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 128.dp)
+        padding(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 150.dp)
     } else {
-        padding(start = 24.dp, top = 24.dp, end = 136.dp, bottom = 52.dp)
+        padding(start = 24.dp, top = 24.dp, end = 160.dp, bottom = 52.dp)
     }
 
-private val HeroMinHeight = 196.dp
+private val HeroMinHeight = 220.dp
+
+/** The celebration's disc pulse, once per closed day per process — like the tree's leaves. */
+private var pulsedKey: String? = null
+
+/** The hero's tree: tapping it opens the tree sheet (the call-out row is the accessible way in). */
+@Composable
+private fun BoxScope.HeroTree(tree: TreeState, largeFont: Boolean, reducedMotion: Boolean, onOpenTree: () -> Unit) {
+    GrowthTree(
+        stage = tree.stage,
+        details = tree.details,
+        resting = tree.todayRest != null,
+        reducedMotion = reducedMotion,
+        size = if (largeFont) TreeSize.HERO_COMPACT else TreeSize.HERO,
+        celebrate = tree.callout.kind == CalloutKind.NEW_STAGE || tree.callout.kind == CalloutKind.MILESTONE,
+        celebrateKey = tree.lastClosedKey,
+        keepsakes = tree.keepsakes,
+        sprigs = tree.sprigs,
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(end = 8.dp)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpenTree)
+    )
+}
+
+/**
+ * The tree's one line, first in the ground band: "Fern · Sapling" and what's happening today. It's
+ * the accessible way into the tree sheet, and a polite live region so a pause or a raise is
+ * announced once.
+ */
+@Composable
+internal fun TreeCalloutRow(tree: TreeState, onOpen: () -> Unit, reducedMotion: Boolean) {
+    val colors = MaterialTheme.reclaim
+    val title = treeTitleLine(tree)
+    val celebrate = tree.callout.kind == CalloutKind.NEW_STAGE || tree.callout.kind == CalloutKind.MILESTONE
+    val pulse = remember { Animatable(1f) }
+    LaunchedEffect(celebrate, tree.lastClosedKey) {
+        if (!celebrate || reducedMotion || pulsedKey == tree.lastClosedKey) return@LaunchedEffect
+        pulsedKey = tree.lastClosedKey
+        delay(Motion.treeGrowMs.toLong())
+        pulse.animateTo(1.15f, tween(150))
+        pulse.animateTo(1f, tween(150))
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clip(RoundedCornerShape(Radii.chip))
+            .clickable(onClickLabel = "Open your tree", role = Role.Button, onClick = onOpen)
+            .padding(vertical = 8.dp)
+            // One announcement, read once: "Fern, Sapling. Fern is growing today."
+            .clearAndSetSemantics {
+                contentDescription = "${treeNameTitle(tree.name)}, ${tree.stage.label}. ${tree.callout.text}" +
+                    (tree.upcoming.firstOrNull()?.let { " Next: ${it.first.label} in about ${it.second} days." } ?: "")
+                liveRegion = LiveRegionMode.Polite
+                role = Role.Button
+                onClick(label = "Open your tree") {
+                    onOpen()
+                    true
+                }
+            }
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(32.dp)
+                .graphicsLayer {
+                    scaleX = pulse.value
+                    scaleY = pulse.value
+                }
+                .background(colors.onHero.copy(alpha = 0.12f), CircleShape)
+        ) {
+            CalloutGlyphMark(tree.callout.glyph, colors.onHero, Modifier.size(18.dp))
+        }
+        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = colors.onHero)
+            Text(
+                tree.callout.text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onHero,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+            val next = tree.upcoming.firstOrNull()
+            if (next != null) {
+                Text(
+                    "Next: ${next.first.label} in " + if (next.second <= 1) "1 day" else "~${next.second} days",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.onHeroMuted,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+        Chevron(colors.onHeroMuted)
+    }
+}
+
+/** Leaf, moon or star for a call-out. Decorative. */
+@Composable
+internal fun CalloutGlyphMark(glyph: CalloutGlyph, color: Color, modifier: Modifier) {
+    when (glyph) {
+        CalloutGlyph.LEAF -> LeafGlyph(color, modifier)
+        CalloutGlyph.MOON -> MoonGlyph(color, modifier)
+        CalloutGlyph.STAR -> StarGlyph(color, modifier)
+    }
+}
 
 /** The ground band under the hill: notes, actions and lists that belong to the hero. */
 @Composable
@@ -194,7 +312,7 @@ internal fun expandExit(reducedMotion: Boolean): ExitTransition =
     if (reducedMotion) ExitTransition.None else shrinkVertically(tween(Motion.expandMs, easing = FastOutSlowInEasing)) + fadeOut(tween(Motion.expandMs))
 
 /**
- * Home's focal point: time won back, grown into a plant, plus the one month figure on Home. The
+ * Home's focal point: time won back, with your tree growing beside it, plus the one month figure on Home. The
  * year lives in the detail sheet (from day 14). Tap for details.
  */
 @Composable
@@ -204,7 +322,8 @@ internal fun SavedHero(
     hasUsageAccess: Boolean,
     largeFont: Boolean,
     reducedMotion: Boolean,
-    onOpenDetails: () -> Unit
+    onOpenDetails: () -> Unit,
+    onOpenTree: () -> Unit
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.reclaim
@@ -213,7 +332,6 @@ internal fun SavedHero(
     val headline = savedHeadline(progress)
     val provisional = progress.provisionalUntilMs != null
     val monthLine = progress.monthMs?.let { "≈ ${formatProjection(it)} a month at this pace" + if (provisional) " · estimate" else "" }
-        ?: "Your monthly estimate shows up on day 3"
     val summary = buildString {
         val figure = spoken(formatSaved(headline.ms))
         append(
@@ -221,14 +339,12 @@ internal fun SavedHero(
                 HeadlineKind.TODAY -> "$figure saved today. "
                 HeadlineKind.YESTERDAY -> "Yesterday you saved $figure. "
                 HeadlineKind.SINCE_START -> "Since you started: $figure. Nothing saved yet today. "
-                HeadlineKind.FRESH -> "Just getting started. Time you win back today shows up here. "
+                HeadlineKind.FRESH -> "Just getting started. "
             }
         )
         val month = progress.monthMs
         if (month != null) {
             append("About ${spoken(formatProjection(month))} this month").append(if (provisional) ", an estimate. " else ". ")
-        } else {
-            append("Your monthly estimate shows up on day 3. ")
         }
         progress.yearMs?.let { append("About ${spoken(formatProjection(it))} this year.") }
     }.trim()
@@ -241,13 +357,8 @@ internal fun SavedHero(
 
     HeroPanel(onClick = onOpenDetails, onClickLabel = "Show details") {
         Box(modifier = Modifier.fillMaxWidth().heightIn(min = HeroMinHeight)) {
-            HeroBackdrop(Modifier.matchParentSize())
-            GrowthPlant(
-                stage = growthStage(progress.sinceStartedMs),
-                reducedMotion = reducedMotion,
-                compact = largeFont,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp)
-            )
+            HeroBackdrop(Modifier.matchParentSize(), resting = progress.tree.todayRest != null, reducedMotion = reducedMotion)
+            HeroTree(progress.tree, largeFont, reducedMotion, onOpenTree)
             Column(
                 modifier = Modifier
                     .heroTextPadding(largeFont)
@@ -276,16 +387,19 @@ internal fun SavedHero(
                         } else {
                             HeroNumberText(formatSaved(shown.ms))
                         }
-                        Text(
-                            text = when (shown.kind) {
-                                HeadlineKind.TODAY -> "saved today"
-                                HeadlineKind.YESTERDAY -> "saved yesterday"
-                                HeadlineKind.SINCE_START -> "saved since you started"
-                                HeadlineKind.FRESH -> "Time you win back today shows up here."
-                            },
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
+                        val caption = when (shown.kind) {
+                            HeadlineKind.TODAY -> "saved today"
+                            HeadlineKind.YESTERDAY -> "saved yesterday"
+                            HeadlineKind.SINCE_START -> "saved since you started"
+                            HeadlineKind.FRESH -> null
+                        }
+                        if (caption != null) {
+                            Text(
+                                text = caption,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
                         if (shown.kind == HeadlineKind.SINCE_START) {
                             Text(
                                 "Nothing saved yet today",
@@ -296,58 +410,60 @@ internal fun SavedHero(
                         }
                     }
                 }
-                Text(
-                    monthLine,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onHeroMuted,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
+                if (monthLine != null) {
+                    Text(
+                        monthLine,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onHeroMuted,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
             }
         }
-        if (notes.isNotEmpty() || !hasUsageAccess || showByApp) {
-            GroundBand {
-                if (notes.isNotEmpty()) {
-                    Text(notes.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = colors.onHeroMuted)
-                }
-                if (!hasUsageAccess || showByApp) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val buttonColors = ButtonDefaults.textButtonColors(contentColor = colors.onHero)
-                        if (!hasUsageAccess) {
-                            TextButton(
-                                onClick = { runCatching { context.startActivity(usageAccessSettingsIntent()) } },
-                                colors = buttonColors
-                            ) { Text("Allow Usage access") }
-                        }
-                        // Per app, collapsed by default; no minus signs, which read as loss.
-                        if (showByApp) {
-                            TextButton(
-                                onClick = { showApps = !showApps },
-                                colors = buttonColors,
-                                modifier = Modifier.semantics { stateDescription = if (showApps) "Expanded" else "Collapsed" }
-                            ) {
-                                Text("By app")
-                                Chevron(colors.onHero, rotation = if (showApps) -90f else 90f)
-                            }
+        // Always shown now: the tree's line leads it.
+        GroundBand {
+            TreeCalloutRow(progress.tree, onOpen = onOpenTree, reducedMotion = reducedMotion)
+            if (notes.isNotEmpty()) {
+                Text(notes.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = colors.onHeroMuted)
+            }
+            if (!hasUsageAccess || showByApp) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val buttonColors = ButtonDefaults.textButtonColors(contentColor = colors.onHero)
+                    if (!hasUsageAccess) {
+                        TextButton(
+                            onClick = { runCatching { context.startActivity(usageAccessSettingsIntent()) } },
+                            colors = buttonColors
+                        ) { Text("Allow Usage access") }
+                    }
+                    // Per app, collapsed by default; no minus signs, which read as loss.
+                    if (showByApp) {
+                        TextButton(
+                            onClick = { showApps = !showApps },
+                            colors = buttonColors,
+                            modifier = Modifier.semantics { stateDescription = if (showApps) "Expanded" else "Collapsed" }
+                        ) {
+                            Text("By app")
+                            Chevron(colors.onHero, rotation = if (showApps) -90f else 90f)
                         }
                     }
                 }
-                if (showByApp) {
-                    AnimatedVisibility(visible = showApps, enter = expandEnter(reducedMotion), exit = expandExit(reducedMotion)) {
-                        Column {
-                            tracked.filter { it.packageName in today.byApp }.forEach { app ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .heightIn(min = 32.dp)
-                                        .semantics(mergeDescendants = true) { }
-                                ) {
-                                    Box(Modifier.size(10.dp).background(slotColor(app.slot), CircleShape))
-                                    Text(
-                                        "${rememberAppLabel(app.packageName)} ${formatSaved(today.byApp[app.packageName] ?: 0L)} saved",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.padding(start = 8.dp)
-                                    )
-                                }
+            }
+            if (showByApp) {
+                AnimatedVisibility(visible = showApps, enter = expandEnter(reducedMotion), exit = expandExit(reducedMotion)) {
+                    Column {
+                        tracked.filter { it.packageName in today.byApp }.forEach { app ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .heightIn(min = 32.dp)
+                                    .semantics(mergeDescendants = true) { }
+                            ) {
+                                Box(Modifier.size(10.dp).background(slotColor(app.slot), CircleShape))
+                                Text(
+                                    "${rememberAppLabel(app.packageName)} ${formatSaved(today.byApp[app.packageName] ?: 0L)} saved",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
                             }
                         }
                     }
@@ -358,8 +474,8 @@ internal fun SavedHero(
 }
 
 /**
- * The hero before there's a baseline: the last 24 hours, honestly and per app, with a seed that
- * says growth is coming. Not clickable — there are no saved figures to detail yet.
+ * The hero before there's a baseline: the last 24 hours, honestly and per app, with the tree — it
+ * grows from days under the limit and swaps too. Not clickable — no saved figures to detail yet.
  */
 @Composable
 internal fun Last24hHero(
@@ -367,7 +483,8 @@ internal fun Last24hHero(
     tracked: List<TrackedApp>,
     hasUsageAccess: Boolean,
     largeFont: Boolean,
-    reducedMotion: Boolean
+    reducedMotion: Boolean,
+    onOpenTree: () -> Unit
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.reclaim
@@ -381,13 +498,8 @@ internal fun Last24hHero(
 
     HeroPanel(onClick = null, onClickLabel = null) {
         Box(modifier = Modifier.fillMaxWidth().heightIn(min = HeroMinHeight)) {
-            HeroBackdrop(Modifier.matchParentSize())
-            GrowthPlant(
-                stage = GrowthStage.SEED,
-                reducedMotion = reducedMotion,
-                compact = largeFont,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp)
-            )
+            HeroBackdrop(Modifier.matchParentSize(), resting = progress.tree.todayRest != null, reducedMotion = reducedMotion)
+            HeroTree(progress.tree, largeFont, reducedMotion, onOpenTree)
             Column(
                 modifier = Modifier
                     .heroTextPadding(largeFont)
@@ -411,6 +523,7 @@ internal fun Last24hHero(
             }
         }
         GroundBand {
+            TreeCalloutRow(progress.tree, onOpen = onOpenTree, reducedMotion = reducedMotion)
             if (total > 0) {
                 UsageBar(perApp, gapColor = colors.heroGround, modifier = Modifier.padding(top = 12.dp))
                 UsageLegend(perApp, labelColor = colors.onHero, valueColor = colors.onHeroMuted, modifier = Modifier.padding(top = 8.dp))
@@ -423,16 +536,9 @@ internal fun Last24hHero(
                         .padding(top = 8.dp)
                         .heightIn(min = 48.dp)
                 ) {
-                    Text("Allow Usage access to see how much time you win back", modifier = Modifier.weight(1f, fill = false))
+                    Text("Allow Usage access to see time saved", modifier = Modifier.weight(1f, fill = false))
                     Chevron(colors.onHero)
                 }
-            } else {
-                Text(
-                    "Time won back shows up once your phone has 3 days of history.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onHeroMuted,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
-                )
             }
         }
     }
@@ -503,18 +609,17 @@ internal fun SavedDetailSheet(progress: Progress, onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                "Time won back",
+                "Time saved",
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.semantics { heading() }
             )
             DetailRow("Since you started", formatSaved(progress.sinceStartedMs))
             DetailRow("Today", formatSaved(progress.today.totalMs))
-            DetailRow("This month", progress.monthMs?.let { "≈ ${formatProjection(it)}" } ?: "Shows up on day 3")
-            DetailRow("This year", progress.yearMs?.let { "≈ ${formatYearProjection(it)}" } ?: "Shows up on day 14")
+            progress.monthMs?.let { DetailRow("This month", "≈ ${formatProjection(it)}") }
+            progress.yearMs?.let { DetailRow("This year", "≈ ${formatYearProjection(it)}") }
             flavourLine(progress)?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             }
-            Text(plantLine(progress.sinceStartedMs), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // The hero only says "estimate"; the date it settles on lives here.
             progress.provisionalUntilMs?.let {
                 Text(
@@ -524,20 +629,12 @@ internal fun SavedDetailSheet(progress: Progress, onDismiss: () -> Unit) {
                 )
             }
             Text(
-                "Measured against your usual daily time before ReclaimLife. Days when tracking was off or " +
-                    "paused don't count either way, and a heavier day counts as 0 — never less.",
+                "Compared to your usual day before ReclaimLife. Heavier days count as 0.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
-}
-
-/** What the hero's plant means and when it next grows. */
-internal fun plantLine(sinceStartedMs: Long): String {
-    val next = nextStage(growthStage(sinceStartedMs))
-        ?: return "Your plant is in full bloom. Every minute from here is a bonus."
-    return "Your plant grows as your time adds up. It reaches its next stage at ${formatSaved(next.thresholdMs)} since you started."
 }
 
 @Composable

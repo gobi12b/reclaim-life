@@ -56,20 +56,16 @@ fun AccessibilityDisclosure(modifier: Modifier = Modifier) {
         Column(modifier = Modifier.padding(16.dp)) {
             DisclosureItem(
                 title = "What it reads",
-                body = "Only the apps you choose to watch — Instagram and YouTube to start. In those " +
-                    "it notices when you open them, to show a moment to pause, and in Instagram and " +
-                    "YouTube it reads scrolling and screen layout, enough to tell a reel swipe from " +
-                    "normal browsing. It gets no events from other apps; it only checks which app " +
-                    "is in front, to notice when you leave."
+                body = "Only the apps you pick: when you open them, and scrolling in Instagram and " +
+                    "YouTube to count reels."
             )
             DisclosureItem(
                 title = "What it never reads",
-                body = "Your messages, what you type, passwords, or what's in the reels. " +
-                    "No screen content is saved — only your reel counts and time in each app."
+                body = "Messages, typing, passwords or reel content. Only counts are saved."
             )
             DisclosureItem(
                 title = "Where it goes",
-                body = "Nowhere. ReclaimLife has no internet access; everything stays on this phone."
+                body = "Nowhere. No internet access. It stays on your phone."
             )
             PrivacyPolicyLink(modifier = Modifier.padding(top = 4.dp))
         }
@@ -99,8 +95,7 @@ fun AccessibilityConsentDialog(onDismiss: () -> Unit) {
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    text = "To count reels and stop you at your limit, ReclaimLife needs Accessibility " +
-                        "access. Here's exactly what that means:",
+                    text = "Needed to count reels.",
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
                 AccessibilityDisclosure()

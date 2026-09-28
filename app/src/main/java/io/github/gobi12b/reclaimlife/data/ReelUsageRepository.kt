@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
@@ -53,6 +54,8 @@ class ReelUsageRepository(private val context: Context) {
         val APP_USAGE_SPANS = stringPreferencesKey("app_usage_spans")
         /** Skip/continue choices on the open-pause screen, for Insights. */
         val GATE_DECISIONS = stringPreferencesKey("gate_decisions")
+        /** Finished 2-minute swaps per local day, for two weeks — see [parseSwapsByDay]. */
+        val SWAPS_BY_DAY = stringPreferencesKey("swaps_by_day")
     }
 
     /** Lifetime count of past days that ended at or under that day's limit. */
@@ -70,27 +73,27 @@ class ReelUsageRepository(private val context: Context) {
 
     /**
      * Closes out the previous day into the within/exceeded tally, using [currentLimit] and [mode] as
-     * stand-ins for that day's (we don't keep a per-day history of setting changes); see [dayWithinLimit]. Call this once when the
-     * app or service wakes up, before anything else reads today's count, so a day with zero app opens
-     * doesn't just silently vanish without ever being tallied.
+     * stand-ins for that day's (see [dayWithinLimit]). Call this once when the app or service wakes
+     * up, before anything else reads today's count, so a day with zero app opens doesn't just
+     * silently vanish without ever being tallied. The first reel of a new day does the same.
      */
     suspend fun closeOutPreviousDayIfNeeded(currentLimit: Int, mode: LimitMode) {
-        context.usageDataStore.edit { prefs ->
-            val today = todayKey()
-            val storedDate = prefs[Keys.COUNT_DATE]
-            if (storedDate != null && storedDate != today) {
-                val finalCount = totalReels(countsOf(prefs))
-                val finalAllowance = prefs[Keys.EXTRA_ALLOWANCE] ?: 0
-                val hourlyBreaks = prefs[Keys.HOURLY_BREAKS] ?: 0
-                val within = dayWithinLimit(mode, finalCount, currentLimit, finalAllowance, hourlyBreaks)
-                val key = if (within) Keys.DAYS_WITHIN_LIMIT else Keys.DAYS_EXCEEDED_LIMIT
-                prefs[key] = (prefs[key] ?: 0) + 1
-                val history = parseDayHistory(prefs[Keys.DAY_HISTORY]).toMutableMap()
-                history[storedDate] = if (within) DayOutcome.WITHIN else DayOutcome.OVER
-                prefs[Keys.DAY_HISTORY] = serializeDayHistory(history)
-            }
-            rollDateIfNeeded(prefs, today)
-        }
+        context.usageDataStore.edit { prefs -> rollDateIfNeeded(prefs, todayKey(), currentLimit, mode) }
+    }
+
+    /** Tallies the stored day's outcome before it's reset, so the streak, week and tree never miss it. */
+    private fun recordOutcome(prefs: MutablePreferences, storedDate: String, limit: Int, mode: LimitMode) {
+        val finalCount = totalReels(countsOf(prefs))
+        val finalAllowance = prefs[Keys.EXTRA_ALLOWANCE] ?: 0
+        val hourlyBreaks = prefs[Keys.HOURLY_BREAKS] ?: 0
+        val within = dayWithinLimit(mode, finalCount, limit, finalAllowance, hourlyBreaks)
+        val history = parseDayHistory(prefs[Keys.DAY_HISTORY]).toMutableMap()
+        // Recorded once: a date already in the history keeps its outcome and isn't tallied again.
+        if (storedDate in history) return
+        val key = if (within) Keys.DAYS_WITHIN_LIMIT else Keys.DAYS_EXCEEDED_LIMIT
+        prefs[key] = (prefs[key] ?: 0) + 1
+        history[storedDate] = if (within) DayOutcome.WITHIN else DayOutcome.OVER
+        prefs[Keys.DAY_HISTORY] = serializeDayHistory(history)
     }
 
     private fun todayKey(): String =
@@ -117,6 +120,25 @@ class ReelUsageRepository(private val context: Context) {
     /** Extra reels granted today on top of the daily limit, via the "just a few more" flow. */
     val todayExtraAllowance: Flow<Int> = context.usageDataStore.data.map { prefs ->
         if (prefs[Keys.COUNT_DATE] == todayKey()) prefs[Keys.EXTRA_ALLOWANCE] ?: 0 else 0
+    }
+
+    /** Breaks today that reopened reels at the hourly limit — how an hourly-only day is scored. */
+    val todayHourlyBreaks: Flow<Int> = context.usageDataStore.data.map { prefs ->
+        if (prefs[Keys.COUNT_DATE] == todayKey()) prefs[Keys.HOURLY_BREAKS] ?: 0 else 0
+    }
+
+    /** 2-minute swaps finished per local day, for two weeks — each grows the tree a little. */
+    val swapsByDay: Flow<Map<String, Int>> = context.usageDataStore.data.map { parseSwapsByDay(it[Keys.SWAPS_BY_DAY]) }
+
+    /** A swap ran to the end and its finish button was tapped (not skipped or closed). */
+    suspend fun recordSwapCompleted(nowMs: Long) {
+        context.usageDataStore.edit { prefs ->
+            val key = dateKeyOf(Calendar.getInstance().apply { timeInMillis = nowMs })
+            val keepFrom = dateKeyOf(Calendar.getInstance().apply { timeInMillis = nowMs - GROWTH_LOG_RETENTION_MS })
+            val swaps = parseSwapsByDay(prefs[Keys.SWAPS_BY_DAY]).toMutableMap()
+            swaps.merge(key, 1, Int::plus)
+            prefs[Keys.SWAPS_BY_DAY] = serializeSwapsByDay(swaps, keepFrom)
+        }
     }
 
     /** How many times today someone has asked for more after being blocked. */
@@ -235,11 +257,11 @@ class ReelUsageRepository(private val context: Context) {
      * Adds [amount] reels in [packageName] (usually 1; more if a pager skipped past several at
      * once). Returns today's new total.
      */
-    suspend fun incrementAndGet(packageName: String, amount: Int = 1): Int {
+    suspend fun incrementAndGet(packageName: String, amount: Int, dailyLimit: Int, mode: LimitMode): Int {
         var result = 0
         context.usageDataStore.edit { prefs ->
             val today = todayKey()
-            rollDateIfNeeded(prefs, today)
+            rollDateIfNeeded(prefs, today, dailyLimit, mode)
             val counts = countsOf(prefs).toMutableMap()
             counts.merge(packageName, amount, Int::plus)
             result = totalReels(counts)
@@ -254,14 +276,14 @@ class ReelUsageRepository(private val context: Context) {
     }
 
     /** Grants [amount] extra reels for today and bumps the attempt counter. Returns the new attempt count. */
-    suspend fun grantExtraAndGet(amount: Int): Int {
+    suspend fun grantExtraAndGet(amount: Int, dailyLimit: Int, mode: LimitMode): Int {
         var attempts = 0
         context.usageDataStore.edit { prefs ->
             val today = todayKey()
             val currentAllowance = if (prefs[Keys.COUNT_DATE] == today) prefs[Keys.EXTRA_ALLOWANCE] ?: 0 else 0
             val currentAttempts = if (prefs[Keys.COUNT_DATE] == today) prefs[Keys.EXTRA_ATTEMPTS] ?: 0 else 0
             attempts = currentAttempts + 1
-            rollDateIfNeeded(prefs, today)
+            rollDateIfNeeded(prefs, today, dailyLimit, mode)
             prefs[Keys.EXTRA_ALLOWANCE] = currentAllowance + amount
             prefs[Keys.EXTRA_ATTEMPTS] = attempts
         }
@@ -272,34 +294,37 @@ class ReelUsageRepository(private val context: Context) {
      * Starts the hourly window afresh — the reward for finishing a 2-minute swap at the hourly
      * limit. Today's count (and so the daily limit) is untouched; the break is tallied for scoring.
      */
-    suspend fun clearHourlyWindow() {
+    suspend fun clearHourlyWindow(dailyLimit: Int, mode: LimitMode) {
         context.usageDataStore.edit { prefs ->
-            rollDateIfNeeded(prefs, todayKey())
+            rollDateIfNeeded(prefs, todayKey(), dailyLimit, mode)
             prefs.remove(Keys.RECENT_REEL_TIMES)
             prefs[Keys.HOURLY_BREAKS] = (prefs[Keys.HOURLY_BREAKS] ?: 0) + 1
         }
     }
 
     /** Records an ask for more without granting anything yet (used to advance past the guilt/walk gates). */
-    suspend fun recordExtraAttemptAndGet(): Int {
+    suspend fun recordExtraAttemptAndGet(dailyLimit: Int, mode: LimitMode): Int {
         var attempts = 0
         context.usageDataStore.edit { prefs ->
             val today = todayKey()
             val currentAttempts = if (prefs[Keys.COUNT_DATE] == today) prefs[Keys.EXTRA_ATTEMPTS] ?: 0 else 0
             attempts = currentAttempts + 1
-            rollDateIfNeeded(prefs, today)
+            rollDateIfNeeded(prefs, today, dailyLimit, mode)
             prefs[Keys.EXTRA_ATTEMPTS] = attempts
         }
         return attempts
     }
 
     /**
-     * Resets count/allowance/attempts to zero for a new day if the stored date is stale. The closed
-     * day's per-app reels are kept briefly in [Keys.REELS_BY_DAY] for the daily-usage record.
+     * Resets count/allowance/attempts to zero for a new day if the stored date is stale, after
+     * recording the outgoing day's outcome against [dailyLimit] and [mode] (the current settings stand
+     * in for that day's). The closed day's per-app reels are kept briefly in [Keys.REELS_BY_DAY] for
+     * the daily-usage record.
      */
-    private fun rollDateIfNeeded(prefs: MutablePreferences, today: String) {
+    private fun rollDateIfNeeded(prefs: MutablePreferences, today: String, dailyLimit: Int, mode: LimitMode) {
         val storedDate = prefs[Keys.COUNT_DATE]
         if (storedDate != today) {
+            if (storedDate != null) recordOutcome(prefs, storedDate, dailyLimit, mode)
             val closed = countsOf(prefs).filterKeys { it != EARLIER_TODAY_KEY }
             if (storedDate != null && closed.isNotEmpty()) {
                 val byDay = parseReelsByDay(prefs[Keys.REELS_BY_DAY]).toMutableMap()

@@ -44,7 +44,7 @@ fun chooseInsight(
 ): HomeInsight {
     // 1 — nothing to compare yet.
     if (!hasSavedFigures || last7.size < MONTH_MIN_DAYS) {
-        return HomeInsight(InsightKind.SETTLING, "Give it a couple of days, and we'll show you how it's going.")
+        return HomeInsight(InsightKind.SETTLING, "Check back in a couple of days.")
     }
     val name = nickname.trim()
     fun average(days: List<DailyRecord>, pkg: String? = null): Double =
@@ -63,7 +63,7 @@ fun chooseInsight(
                 val label = appLabel(driver)
                 return HomeInsight(
                     InsightKind.APP_DRIVEN,
-                    "Most of the extra time is $label. Turn on Pause before opening for it?",
+                    "Most extra time is on $label. Pause before opening?",
                     InsightAction.TURN_ON_GATE,
                     "Turn on for $label",
                     driver
@@ -73,7 +73,7 @@ fun chooseInsight(
             if (upPercent >= 30 && usesDailyLimit) {
                 return HomeInsight(
                     InsightKind.CREPT_UP,
-                    "Scrolling has crept up this week (${formatPercent(upPercent).withPlus()}). Want a lower limit for a few days?",
+                    "Scrolling up ${formatPercent(upPercent).withPlus()} this week. Lower your limit?",
                     InsightAction.LOWER_LIMIT,
                     "Try 10 fewer reels"
                 )
@@ -81,7 +81,7 @@ fun chooseInsight(
             // 4 — a bit heavier.
             return HomeInsight(
                 InsightKind.HEAVIER,
-                "This week's been a bit heavier (${formatPercent(upPercent).withPlus()}). No stress — one 2-minute swap can reset the day.",
+                "A heavier week (${formatPercent(upPercent).withPlus()}). A quick swap can reset the day.",
                 InsightAction.START_SWAP,
                 "Start a swap"
             )
@@ -97,15 +97,13 @@ fun chooseInsight(
         if (downMinutes >= INSIGHT_MIN_CHANGE_MINUTES && downPercent >= 30) {
             return HomeInsight(
                 InsightKind.CUT_BIG,
-                "You've cut your scrolling by ${formatPercent(downPercent)}. That's a real change — nice work" +
-                    (if (name.isEmpty()) "." else ", $name.")
+                "Scrolling down ${formatPercent(downPercent)} from your usual."
             )
         }
         if (downMinutes >= INSIGHT_MIN_CHANGE_MINUTES && downPercent >= 10) {
             return HomeInsight(
                 InsightKind.CUT,
-                "You're scrolling ${formatPercent(downPercent)} less than when you started. Good job" +
-                    (if (name.isEmpty()) "." else ", $name.")
+                "Scrolling down ${formatPercent(downPercent)} from your usual."
             )
         }
     }
@@ -113,7 +111,7 @@ fun chooseInsight(
     // 7 — holding steady.
     return HomeInsight(
         InsightKind.STEADY,
-        "Holding steady" + (if (name.isEmpty()) "" else ", $name") + ". Want to try one swap today?",
+        "Holding steady" + (if (name.isEmpty()) "" else ", $name") + ". Try a swap?",
         InsightAction.START_SWAP,
         "Start a swap"
     )

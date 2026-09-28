@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -52,16 +53,26 @@ import io.github.gobi12b.reclaimlife.ReclaimLifeApp
 import io.github.gobi12b.reclaimlife.data.FlashcardDeck
 import io.github.gobi12b.reclaimlife.data.Mood
 import io.github.gobi12b.reclaimlife.data.ReplacementActivity
+import io.github.gobi12b.reclaimlife.data.TreeState
 import io.github.gobi12b.reclaimlife.data.formatPauseRemaining
+import io.github.gobi12b.reclaimlife.data.treeNameInline
+import io.github.gobi12b.reclaimlife.data.treeNameTitle
+import io.github.gobi12b.reclaimlife.service.buildTreeState
+import io.github.gobi12b.reclaimlife.service.swapGrowthLine
 import io.github.gobi12b.reclaimlife.ui.common.OwnScreens
 import io.github.gobi12b.reclaimlife.ui.common.SproutBadge
 import io.github.gobi12b.reclaimlife.ui.common.perAppReelsLine
+import io.github.gobi12b.reclaimlife.ui.common.rememberReducedMotion
+import io.github.gobi12b.reclaimlife.ui.home.TreeScene
 import io.github.gobi12b.reclaimlife.ui.replacement.SwapSession
 import io.github.gobi12b.reclaimlife.ui.theme.ReclaimLifeTheme
-import kotlinx.coroutines.delay
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Shown by [io.github.gobi12b.reclaimlife.service.ReelBlockerAccessibilityService] when a limit is
@@ -174,10 +185,22 @@ private fun BlockFlow(
     val todayCount by app.reelUsageRepository.todayCount.collectAsState(initial = dailyLimit)
     val extraAllowance by app.reelUsageRepository.todayExtraAllowance.collectAsState(initial = 0)
     val countsByApp by app.reelUsageRepository.todayCountsByApp.collectAsState(initial = emptyMap())
+    // Worked out once when the flow opens: whether a finished swap still grows the tree today.
+    val afterLine by produceState<String?>(null) { value = swapGrowthLine(app) }
+    val tree by produceState<TreeState?>(null) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { buildTreeState(app, System.currentTimeMillis(), hasBaseline = false) }.getOrNull()
+        }
+    }
 
-    fun grantAndContinue(amount: Int) {
+    /** Only a finished swap counts — never a skip or a close. */
+    suspend fun recordSwap() = app.reelUsageRepository.recordSwapCompleted(System.currentTimeMillis())
+
+    // A finished swap is logged in the same coroutine as leaving, so finishing the screen can't drop it.
+    fun grantAndContinue(amount: Int, swapped: Boolean = false) {
         scope.launch {
-            app.reelUsageRepository.grantExtraAndGet(amount)
+            if (swapped) recordSwap()
+            app.reelUsageRepository.grantExtraAndGet(amount, app.settingsRepository.dailyReelLimit.first(), app.settingsRepository.limitMode.first())
             onContinueToApp()
         }
     }
@@ -185,7 +208,8 @@ private fun BlockFlow(
     /** The hourly block's way through: a finished swap was the break, so the hour starts afresh. */
     fun takeBreakAndContinue() {
         scope.launch {
-            app.reelUsageRepository.clearHourlyWindow()
+            recordSwap()
+            app.reelUsageRepository.clearHourlyWindow(app.settingsRepository.dailyReelLimit.first(), app.settingsRepository.limitMode.first())
             onContinueToApp()
         }
     }
@@ -205,17 +229,15 @@ private fun BlockFlow(
         Stage.SWAP -> SwapSession(
             activity = activity,
             deck = deck,
-            headline = if (hourly) "Time for a little break" else "That's your reels for today",
-            subtitle = if (hourly) {
-                "2 minutes of something better, then reels are yours again" + if (name.isEmpty()) "." else ", $name."
-            } else {
-                "Here's 2 minutes of something better instead" + if (name.isEmpty()) "." else ", $name."
-            },
+            headline = if (hourly) "Hourly limit" else "Limit reached",
+            subtitle = "Something better for two minutes" + if (name.isEmpty()) "." else ", $name.",
             finishLabel = if (hourly) "Back to reels" else "Done",
+            afterLine = afterLine,
             onFinish = {
                 if (hourly) {
                     takeBreakAndContinue()
                 } else {
+                    scope.launch { recordSwap() }
                     swapFinished = true
                     stage = Stage.SUMMARY
                 }
@@ -224,6 +246,7 @@ private fun BlockFlow(
         )
         Stage.SUMMARY -> if (hourly) {
             HourlySummary(
+                tree = tree,
                 hourlyLimit = hourlyLimit,
                 unblockAtMs = hourlyUnblockAtMs,
                 activity = activity,
@@ -233,6 +256,7 @@ private fun BlockFlow(
             )
         } else {
             DailySummary(
+                tree = tree,
                 dailyLimit = dailyLimit,
                 todayCount = todayCount,
                 extraAllowance = extraAllowance,
@@ -253,9 +277,10 @@ private fun BlockFlow(
             activity = activity,
             deck = deck,
             headline = "One more swap first",
-            subtitle = "Spend 2 minutes on this, and $nextGrant more reels are yours.",
+            subtitle = "2 minutes, then $nextGrant more reels.",
             finishLabel = "Get my $nextGrant reels",
-            onFinish = { grantAndContinue(nextGrant) },
+            afterLine = afterLine,
+            onFinish = { grantAndContinue(nextGrant, swapped = true) },
             onSkip = { stage = Stage.SUMMARY },
             skipLabel = "Never mind"
         )
@@ -269,7 +294,7 @@ private fun BlockFlow(
 }
 
 @Composable
-private fun SummaryScaffold(content: @Composable () -> Unit) {
+private fun SummaryScaffold(tree: TreeState?, treeLine: String?, content: @Composable () -> Unit) {
     Scaffold { innerPadding ->
         Column(
             modifier = Modifier
@@ -279,7 +304,11 @@ private fun SummaryScaffold(content: @Composable () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            SproutBadge(modifier = Modifier.padding(bottom = 12.dp), size = 56.dp)
+            if (tree != null) {
+                TreeScene(tree, treeLine, reducedMotion = rememberReducedMotion(), modifier = Modifier.padding(bottom = 20.dp))
+            } else {
+                SproutBadge(modifier = Modifier.padding(bottom = 12.dp), size = 56.dp)
+            }
             content()
         }
     }
@@ -287,6 +316,7 @@ private fun SummaryScaffold(content: @Composable () -> Unit) {
 
 @Composable
 private fun DailySummary(
+    tree: TreeState?,
     dailyLimit: Int,
     todayCount: Int,
     extraAllowance: Int,
@@ -302,14 +332,8 @@ private fun DailySummary(
     onAskForMore: () -> Unit
 ) {
     val canAskForMore = attemptsToday < BlockActivity.MAX_EXTRA_ASKS
-    SummaryScaffold {
-        Text(
-            text = Mood.DONE.emoji,
-            fontSize = 32.sp,
-            modifier = Modifier
-                .padding(bottom = 8.dp)
-                .clearAndSetSemantics { contentDescription = "Mood: ${Mood.DONE.label}" }
-        )
+    // Stopping at the limit keeps today a growing day; the tree says so.
+    SummaryScaffold(tree, tree?.let { if (it.todayRest == null) "Stop here and ${treeNameInline(it.name)} grows tonight." else it.callout.text }) {
         Text(
             text = "$todayCount / ${dailyLimit + extraAllowance} reels" +
                 if (extraAllowance > 0) " ($dailyLimit + $extraAllowance extra)" else "",
@@ -328,15 +352,13 @@ private fun DailySummary(
             )
         }
         Text(
-            text = if (swapFinished) "Nice — that was 2 minutes for you." else "That's your reels for today.",
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
+            text = if (swapFinished) "That's your two minutes." else "Limit reached.",
+            style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 4.dp)
         )
         Text(
-            text = "The rest of today is yours" + (if (name.isEmpty()) "" else ", $name") +
-                ". Reels will be here tomorrow.",
+            text = "Reels are back tomorrow" + (if (name.isEmpty()) "." else ", $name."),
             fontSize = 16.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 12.dp, bottom = 32.dp)
@@ -345,7 +367,7 @@ private fun DailySummary(
             Text("Back to my day")
         }
         OutlinedButton(onClick = onAnotherSwap, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            Text("Another 2 minutes of ${activity.label.lowercase()}")
+            Text("Another swap")
         }
         if (canAskForMore) {
             TextButton(onClick = onAskForMore, modifier = Modifier.padding(top = 8.dp)) {
@@ -353,10 +375,10 @@ private fun DailySummary(
             }
             // The ladder is spelled out so what the next extra asks is known before tapping.
             Text(
-                text = "Extras today: $attemptsToday of ${BlockActivity.MAX_EXTRA_ASKS} — " + when {
-                    nextNeedsWalk -> "the last one comes after a short walk."
-                    swapFinished -> "your 2 minutes earned the next one."
-                    else -> "the next one comes after a 2-minute swap."
+                text = "Extras: $attemptsToday of ${BlockActivity.MAX_EXTRA_ASKS} · " + when {
+                    nextNeedsWalk -> "next after a walk"
+                    swapFinished -> "next one earned"
+                    else -> "next after a swap"
                 },
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center,
@@ -365,7 +387,7 @@ private fun DailySummary(
             )
         } else {
             Text(
-                text = "That's all the extras for today. See you tomorrow 🌱",
+                text = "No extras left today.",
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -377,6 +399,7 @@ private fun DailySummary(
 
 @Composable
 private fun HourlySummary(
+    tree: TreeState?,
     hourlyLimit: Int,
     unblockAtMs: Long,
     activity: ReplacementActivity,
@@ -394,7 +417,7 @@ private fun HourlySummary(
     val cooledDown = nowMs >= unblockAtMs
     val unblockAt = remember(unblockAtMs) { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(unblockAtMs)) }
 
-    SummaryScaffold {
+    SummaryScaffold(tree, tree?.takeIf { it.todayRest == null }?.let { "${treeNameTitle(it.name)} is still growing today." }) {
         Text(
             text = "$hourlyLimit reels in the last hour",
             fontSize = 20.sp,
@@ -402,7 +425,7 @@ private fun HourlySummary(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = "Reels are taking a short break.",
+            text = "That's the hour's reels.",
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
@@ -410,9 +433,9 @@ private fun HourlySummary(
         )
         Text(
             text = if (cooledDown) {
-                "They're ready again whenever you are."
+                "Ready when you are."
             } else {
-                "They'll be back at $unblockAt — or sooner, after a 2-minute break."
+                "Back at $unblockAt, or after a swap."
             },
             fontSize = 16.sp,
             textAlign = TextAlign.Center,
@@ -435,7 +458,7 @@ private fun HourlySummary(
             }
         } else {
             OutlinedButton(onClick = onTakeBreak, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                Text("2 minutes of ${activity.label.lowercase()}, then reels")
+                Text("Swap now, then reels")
             }
         }
     }
@@ -509,8 +532,7 @@ private fun WalkContent(name: String, grant: Int, onBail: () -> Unit, onWalkComp
                 textAlign = TextAlign.Center
             )
             Text(
-                text = "Take a short $target-step walk — around the room or down the street. When you're " +
-                    "back, $grant more reels are yours. This is today's last extra.",
+                text = "Walk $target steps for $grant more reels. Last extra today.",
                 fontSize = 16.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp, bottom = 24.dp)
@@ -531,11 +553,9 @@ private fun WalkContent(name: String, grant: Int, onBail: () -> Unit, onWalkComp
             } else {
                 Text(
                     text = if (!sensorAvailable) {
-                        "This phone can't count steps, so just enjoy the walk — this unlocks when the timer runs out."
+                        "Can't count steps here. Unlocks when the timer ends."
                     } else {
-                        "To count your $target steps, ReclaimLife needs the Physical Activity permission. " +
-                            "Steps are only counted on this screen and never saved. Or skip it and just " +
-                            "walk — this unlocks when the timer runs out."
+                        "Allow Physical Activity to count steps (never saved), or just walk until the timer ends."
                     },
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
@@ -562,7 +582,7 @@ private fun WalkContent(name: String, grant: Int, onBail: () -> Unit, onWalkComp
                 enabled = walkDone,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (walkDone) "Walk done — continue" else "Keep walking…")
+                Text(if (walkDone) "Done, continue" else "Keep walking")
             }
             TextButton(onClick = onBail, modifier = Modifier.padding(top = 8.dp)) {
                 Text("Maybe later")

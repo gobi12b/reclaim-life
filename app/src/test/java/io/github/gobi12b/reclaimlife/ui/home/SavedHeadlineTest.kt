@@ -41,13 +41,4 @@ class SavedHeadlineTest {
         assertEquals("1 hour 5 minutes", spoken("1 h 05 min"))
         assertEquals("10 days", spoken("10 days"))
     }
-
-    @Test
-    fun plantLineNamesTheNextStage() {
-        assertEquals(
-            "Your plant grows as your time adds up. It reaches its next stage at 24 h since you started.",
-            plantLine(13 * hour)
-        )
-        assertEquals("Your plant is in full bloom. Every minute from here is a bonus.", plantLine(80 * hour))
-    }
 }

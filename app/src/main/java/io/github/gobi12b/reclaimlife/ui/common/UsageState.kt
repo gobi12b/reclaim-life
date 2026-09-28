@@ -6,6 +6,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import io.github.gobi12b.reclaimlife.service.Progress
 import io.github.gobi12b.reclaimlife.service.computeProgress
+import io.github.gobi12b.reclaimlife.service.TreeTodaySummary
+import io.github.gobi12b.reclaimlife.service.treeTodaySummary
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -94,6 +96,19 @@ fun rememberProgress(vararg keys: Any?): Progress? {
     var progress by remember { mutableStateOf<Progress?>(null) }
     LaunchedEffect(resumes, minute, *keys) { progress = computeProgress(app) }
     return progress
+}
+
+/**
+ * Today's tree state for the confirms: its name and whether it's resting. Recomputed on resume and
+ * whenever one of [keys] changes; null before the first read.
+ */
+@Composable
+fun rememberTreeToday(vararg keys: Any?): TreeTodaySummary? {
+    val app = LocalContext.current.applicationContext as ReclaimLifeApp
+    val resumes = rememberResumeCount()
+    var summary by remember { mutableStateOf<TreeTodaySummary?>(null) }
+    LaunchedEffect(resumes, *keys) { summary = treeTodaySummary(app) }
+    return summary
 }
 
 @Composable

@@ -31,7 +31,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.github.gobi12b.reclaimlife.ReclaimLifeApp
 import io.github.gobi12b.reclaimlife.data.FlashcardDeck
+import io.github.gobi12b.reclaimlife.service.swapGrowthLine
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalContext
 import io.github.gobi12b.reclaimlife.data.MAX_DAILY_REEL_LIMIT
 import io.github.gobi12b.reclaimlife.data.MAX_HOURLY_REEL_LIMIT
 import io.github.gobi12b.reclaimlife.data.MIN_DAILY_REEL_LIMIT
@@ -54,7 +58,9 @@ fun EditLimitSheet(
     isPaused: Boolean,
     onDismiss: () -> Unit,
     onSave: (Int) -> Unit,
-    prefill: Int = dailyLimit
+    prefill: Int = dailyLimit,
+    /** "Your tree rests for today if you raise it.", or null to leave it out. */
+    treeLine: String? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var pendingLimit by remember { mutableIntStateOf(prefill.coerceAtLeast(MIN_DAILY_REEL_LIMIT)) }
@@ -71,7 +77,7 @@ fun EditLimitSheet(
         ) {
             Text("Daily limit", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
-                text = "You've watched $todayCount today · current limit $dailyLimit",
+                text = "$todayCount watched today",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 20.dp)
@@ -93,11 +99,7 @@ fun EditLimitSheet(
                 )
             }
             Text(
-                text = if (pendingLimit < dailyLimit) {
-                    "Nice — smaller numbers get easier after a few days."
-                } else {
-                    "Go at your own pace — lower it once the current number feels easy."
-                },
+                text = "Lower it when it feels easy.",
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -120,10 +122,12 @@ fun EditLimitSheet(
             onDismissRequest = { confirmRaise = false },
             title = { Text("Raise it to $pendingLimit?") },
             text = {
-                Text(
-                    "That's okay if today needs it. Smaller numbers usually get easier after a few days, " +
-                        "so you can always bring it back down."
-                )
+                Column {
+                    Text(
+                        "That's okay. You can lower it later."
+                    )
+                    treeLine?.let { Text(it, modifier = Modifier.padding(top = 12.dp)) }
+                }
             },
             confirmButton = {
                 Button(onClick = {
@@ -152,7 +156,8 @@ fun EditHourlyLimitSheet(
     hourlyLimit: Int,
     isPaused: Boolean,
     onDismiss: () -> Unit,
-    onSave: (Int) -> Unit
+    onSave: (Int) -> Unit,
+    treeLine: String? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var pendingLimit by remember { mutableIntStateOf(hourlyLimit) }
@@ -169,8 +174,7 @@ fun EditHourlyLimitSheet(
         ) {
             Text("Hourly limit", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
-                text = "Counts reels in any rolling 60 minutes. Hit it and reels pause until the " +
-                    "hour frees up — or right away after a 2-minute break.",
+                text = "Resets every hour.",
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -210,10 +214,12 @@ fun EditHourlyLimitSheet(
             onDismissRequest = { confirmRaise = false },
             title = { Text("Raise it to $pendingLimit an hour?") },
             text = {
-                Text(
-                    "That's okay if it's needed. The hourly limit helps keep one sitting from running long, " +
-                        "and you can always bring it back down."
-                )
+                Column {
+                    Text(
+                        "That's okay. You can lower it later."
+                    )
+                    treeLine?.let { Text(it, modifier = Modifier.padding(top = 12.dp)) }
+                }
             },
             confirmButton = {
                 Button(onClick = {
@@ -257,9 +263,9 @@ fun EditSwapSheet(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 16.dp)
         ) {
-            Text("Your 2-minute swap", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Your swap", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
-                text = "What you'll get instead of more reels when you reach a limit.",
+                text = "What you'll do at your limit.",
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -291,8 +297,12 @@ fun SwapDialog(
     deck: FlashcardDeck,
     headline: String,
     subtitle: String,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    /** Called when the swap is finished (not skipped or closed), before [onClose]: it grows the tree. */
+    onCompleted: () -> Unit = {}
 ) {
+    val app = LocalContext.current.applicationContext as ReclaimLifeApp
+    val afterLine by produceState<String?>(null) { value = swapGrowthLine(app) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             SwapSession(
@@ -301,9 +311,13 @@ fun SwapDialog(
                 headline = headline,
                 subtitle = subtitle,
                 finishLabel = "Done",
-                onFinish = onClose,
+                onFinish = {
+                    onCompleted()
+                    onClose()
+                },
                 onSkip = onClose,
-                skipLabel = "Close"
+                skipLabel = "Close",
+                afterLine = afterLine
             )
         }
     }

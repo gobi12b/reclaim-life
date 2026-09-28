@@ -12,7 +12,13 @@ import io.github.gobi12b.reclaimlife.data.DEFAULT_TRACKED_APPS
 import io.github.gobi12b.reclaimlife.data.DayOutcome
 import io.github.gobi12b.reclaimlife.data.FlashcardDeck
 import io.github.gobi12b.reclaimlife.data.GateDecision
+import io.github.gobi12b.reclaimlife.data.LimitKind
 import io.github.gobi12b.reclaimlife.data.LimitMode
+import io.github.gobi12b.reclaimlife.data.LimitRaise
+import io.github.gobi12b.reclaimlife.data.growthTotal
+import io.github.gobi12b.reclaimlife.data.TreeStage
+import io.github.gobi12b.reclaimlife.data.detailsShown
+import io.github.gobi12b.reclaimlife.data.treeStage
 import io.github.gobi12b.reclaimlife.data.PauseDuration
 import io.github.gobi12b.reclaimlife.data.PauseEntry
 import io.github.gobi12b.reclaimlife.data.PauseReason
@@ -23,6 +29,7 @@ import io.github.gobi12b.reclaimlife.widget.refreshReelWidget
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -79,6 +86,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val pauseLog: StateFlow<List<PauseEntry>> = usage.pauseLog.state(emptyList())
     val pauseIntention: StateFlow<String?> = app.pauseIntentionStore.intention.state(null)
     val dayHistory: StateFlow<Map<String, DayOutcome>> = usage.dayHistory.state(emptyMap())
+    val treeName: StateFlow<String> = settings.treeName.state("")
+    /** Null while loading, so Meet your tree never flashes for someone who's seen it. */
+    val treeIntroSeen: StateFlow<Boolean?> = settings.treeIntroSeen.state(null)
+    /** An existing install whose tree already grew from its history: Meet your tree says so. */
+    val treeIsUpgrade: StateFlow<Boolean> = combine(
+        app.dailyUsageRepository.growthBackfilled,
+        app.dailyUsageRepository.growthLedger,
+        app.dailyUsageRepository.growthCarried
+    ) { backfilled, rows, carried -> backfilled && growthTotal(rows, carried) > 0 }.state(false)
+
+    /** The tree's stage and details now, for Meet your tree before Home has worked out progress. */
+    val treeGrowth: StateFlow<Pair<TreeStage, Int>> = combine(
+        app.dailyUsageRepository.growthLedger,
+        app.dailyUsageRepository.growthCarried
+    ) { rows, carried ->
+        val total = growthTotal(rows, carried)
+        treeStage(total).let { it to detailsShown(it, total) }
+    }.state(TreeStage.SEED to 0)
+
+    /** Whether the upgrade backfill has run, so Meet your tree knows which copy to show. */
+    val treeBackfilled: StateFlow<Boolean> = app.dailyUsageRepository.growthBackfilled.state(false)
+
+    /** Meet your tree is done: name it (optional) and go to Home. */
+    fun completeTreeIntro(name: String) {
+        viewModelScope.launch { settings.completeTreeIntro(name, System.currentTimeMillis()) }
+    }
+
+    fun renameTree(name: String) {
+        viewModelScope.launch { settings.setTreeName(name) }
+    }
+
+    /** The tree sheet's "Set it back": lowering needs no confirm. */
+    fun setBackLimit(raise: LimitRaise) {
+        when (raise.kind) {
+            LimitKind.DAILY -> updateDailyLimit(raise.backTo)
+            LimitKind.HOURLY -> updateHourlyLimit(raise.backTo)
+            LimitKind.MODE -> raise.backToMode?.let(::updateLimitMode)
+        }
+    }
+
+    /** A finished 2-minute swap (not skipped or closed) — it grows the tree a little. */
+    fun recordSwapCompleted() {
+        viewModelScope.launch { usage.recordSwapCompleted(System.currentTimeMillis()) }
+    }
 
     fun completeOnboarding(
         mode: LimitMode,

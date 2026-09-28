@@ -10,6 +10,8 @@ import io.github.gobi12b.reclaimlife.data.HomeInsight
 import io.github.gobi12b.reclaimlife.data.MONTH_MIN_DAYS
 import io.github.gobi12b.reclaimlife.data.SavedHistory
 import io.github.gobi12b.reclaimlife.data.TodaySaved
+import io.github.gobi12b.reclaimlife.data.TreeState
+import io.github.gobi12b.reclaimlife.data.quietDays
 import io.github.gobi12b.reclaimlife.data.USAGE_WINDOW_MS
 import io.github.gobi12b.reclaimlife.data.YEAR_MIN_DAY
 import io.github.gobi12b.reclaimlife.data.baselineFromHistory
@@ -60,7 +62,11 @@ data class Progress(
     val last24hByApp: Map<String, Long>,
     /** The 24 hours before that, all tracked apps together — for "18 min less than the day before". */
     val previous24hMs: Long,
-    val insight: HomeInsight
+    val insight: HomeInsight,
+    /** Your tree. The widget and the pause's calm screen ignore it. */
+    val tree: TreeState,
+    /** Days with the counter running and no reels, never closed out: within, for the week strip and streak. */
+    val quietDays: Set<String>
 ) {
     val last24hMs: Long get() = last24hByApp.values.sum()
     /** "≈ 21 h a month at this pace", from the 7-day average — null before [MONTH_MIN_DAYS] days. */
@@ -83,6 +89,7 @@ suspend fun syncProgressData(app: ReclaimLifeApp, nowMs: Long = System.currentTi
         app.dailyUsageRepository.startRecordingIfNeeded(nowMs)
         recordClosedDays(app, nowMs)
         ensureBaselines(app, nowMs)
+        syncGrowth(app, nowMs)
     }
 }
 
@@ -96,10 +103,10 @@ private suspend fun offIntervals(app: ReclaimLifeApp, nowMs: Long): List<LongRan
 }
 
 /** Time tracking was off or paused — left out of both baseline and saved. */
-private suspend fun untrackedIntervals(app: ReclaimLifeApp, nowMs: Long): List<LongRange> =
+internal suspend fun untrackedIntervals(app: ReclaimLifeApp, nowMs: Long): List<LongRange> =
     (offIntervals(app, nowMs) + pausedIntervals(app.reelUsageRepository.pauseLog.first(), nowMs)).merged()
 
-private fun List<AppStretch>.byApp(): Map<String, List<LongRange>> =
+internal fun List<AppStretch>.byApp(): Map<String, List<LongRange>> =
     groupBy { it.packageName }.mapValues { (_, list) -> list.map { it.startMs..it.endMs } }
 
 private suspend fun recordClosedDays(app: ReclaimLifeApp, nowMs: Long) {
@@ -212,7 +219,9 @@ suspend fun computeProgress(app: ReclaimLifeApp, nowMs: Long = System.currentTim
         usageFromSystem = fromSystem,
         last24hByApp = tracked.associateWith { msIn(last24, byApp[it].orEmpty()) },
         previous24hMs = tracked.sumOf { msIn(previous24, byApp[it].orEmpty()) },
-        insight = todaysInsight(app, records, active, tracked, todayStart, hour)
+        insight = todaysInsight(app, records, active, tracked, todayStart, hour),
+        tree = buildTreeState(app, nowMs, hasBaseline = active.isNotEmpty()),
+        quietDays = quietDays(app.reelUsageRepository.dayHistory.first(), records)
     )
 }
 

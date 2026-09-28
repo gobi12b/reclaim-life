@@ -76,7 +76,7 @@ private val LightColorScheme = lightColorScheme(
 
 /**
  * Home-only roles Material's scheme has no slot for: the hero gradient, the text on it, and the
- * plant. Kept beside the scheme so light and dark switch together.
+ * tree. Kept beside the scheme so light and dark switch together.
  */
 @Immutable
 data class ReclaimColors(
@@ -89,7 +89,12 @@ data class ReclaimColors(
     val plantStem: Color,
     val plantLeaf: Color,
     val plantLeafBright: Color,
-    val plantBloom: Color
+    val plantBloom: Color,
+    val treeBark: Color,
+    val treeBlossom: Color,
+    val treeFruit: Color,
+    /** The moon over a resting tree. */
+    val restMoon: Color
 )
 
 val LightReclaimColors = ReclaimColors(
@@ -102,7 +107,11 @@ val LightReclaimColors = ReclaimColors(
     plantStem = PlantStemLight,
     plantLeaf = PlantLeafLight,
     plantLeafBright = PlantLeafBrightLight,
-    plantBloom = PlantBloomLight
+    plantBloom = PlantBloomLight,
+    treeBark = TreeBarkLight,
+    treeBlossom = TreeBlossomLight,
+    treeFruit = TreeFruitLight,
+    restMoon = RestMoonLight
 )
 
 val DarkReclaimColors = ReclaimColors(
@@ -115,7 +124,11 @@ val DarkReclaimColors = ReclaimColors(
     plantStem = PlantStemDark,
     plantLeaf = PlantLeafDark,
     plantLeafBright = PlantLeafBrightDark,
-    plantBloom = PlantBloomDark
+    plantBloom = PlantBloomDark,
+    treeBark = TreeBarkDark,
+    treeBlossom = TreeBlossomDark,
+    treeFruit = TreeFruitDark,
+    restMoon = RestMoonDark
 )
 
 val LocalReclaimColors = staticCompositionLocalOf { LightReclaimColors }

@@ -6,89 +6,82 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import io.github.gobi12b.reclaimlife.data.formatProjection
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.runtime.produceState
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import io.github.gobi12b.reclaimlife.service.systemForegroundMs
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
-import kotlin.math.PI
-import kotlin.math.sin
-import kotlin.random.Random
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.gobi12b.reclaimlife.ReclaimLifeApp
 import io.github.gobi12b.reclaimlife.data.DEFAULT_GATE_WAIT_MS
-import io.github.gobi12b.reclaimlife.data.TargetApps
-import androidx.compose.runtime.collectAsState
+import io.github.gobi12b.reclaimlife.data.TreeState
+import io.github.gobi12b.reclaimlife.data.formatProjection
 import io.github.gobi12b.reclaimlife.data.formatUsage
+import io.github.gobi12b.reclaimlife.data.treeNameInline
 import io.github.gobi12b.reclaimlife.data.usageMsInWindow
+import io.github.gobi12b.reclaimlife.service.buildTreeState
+import io.github.gobi12b.reclaimlife.service.systemForegroundMs
 import io.github.gobi12b.reclaimlife.ui.common.OwnScreens
-import io.github.gobi12b.reclaimlife.ui.common.appLabel
 import io.github.gobi12b.reclaimlife.ui.common.SproutBadge
+import io.github.gobi12b.reclaimlife.ui.common.appLabel
+import io.github.gobi12b.reclaimlife.ui.common.rememberReducedMotion
+import io.github.gobi12b.reclaimlife.ui.home.TreeScene
+import io.github.gobi12b.reclaimlife.ui.theme.DisplayFamily
 import io.github.gobi12b.reclaimlife.ui.theme.ReclaimLifeTheme
+import kotlin.math.PI
+import kotlin.math.sin
+import kotlin.random.Random
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * A short pause shown by [io.github.gobi12b.reclaimlife.service.ReelBlockerAccessibilityService]
@@ -119,13 +112,16 @@ class GateActivity : ComponentActivity() {
                             )
                     }
                 }
-                val reelsByApp by app.reelUsageRepository.todayCountsByApp.collectAsState(initial = emptyMap())
+                val tree by produceState<TreeState?>(initialValue = null) {
+                    value = withContext(Dispatchers.IO) {
+                        runCatching { buildTreeState(app, System.currentTimeMillis(), hasBaseline = false) }.getOrNull()
+                    }
+                }
                 BackHandler { skip() }
                 GateContent(
                     appLabel = targetPackage?.let { appLabel(this@GateActivity, it) } ?: "this app",
                     usage = usage,
-                    // Reels are only counted in some apps; others show their time alone.
-                    reelsToday = targetPackage?.takeIf { TargetApps.countsReels(it) }?.let { reelsByApp[it] ?: 0 },
+                    tree = tree,
                     waitMs = intent.getLongExtra(EXTRA_WAIT_MS, DEFAULT_GATE_WAIT_MS),
                     onSkip = { skip() },
                     onContinue = {
@@ -174,23 +170,6 @@ class GateActivity : ComponentActivity() {
     }
 }
 
-/** Small, concrete ways to come back to the room — shown one after another while the gate is open. */
-private val RELAX_PROMPTS = listOf(
-    "Look around you.",
-    "Take a few slow breaths.",
-    "Find three objects you can see.",
-    "Notice something blue nearby.",
-    "Listen for the quietest sound.",
-    "Feel your feet on the floor.",
-    "Drop your shoulders.",
-    "Unclench your jaw.",
-    "Look out of a window, if there's one near.",
-    "Notice how you're sitting."
-)
-
-/** How long each prompt stays before the next moves in. */
-private const val PROMPT_HOLD_MS = 2600L
-
 /** Where the "last 24 hours" figure came from — Android's full record, or ReclaimLife's own timing. */
 private data class GateUsage(val ms: Long, val fromSystem: Boolean)
 
@@ -198,18 +177,31 @@ private data class GateUsage(val ms: Long, val fromSystem: Boolean)
 private fun GateContent(
     appLabel: String,
     usage: GateUsage?,
-    reelsToday: Int?,
+    tree: TreeState?,
     waitMs: Long,
     onSkip: () -> Unit,
     onContinue: () -> Unit
 ) {
-    // A shuffled run of prompts, each moving in after the last, for as long as the screen is open.
-    val prompts = remember { RELAX_PROMPTS.shuffled() }
-    var promptIndex by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(PROMPT_HOLD_MS)
-            promptIndex = (promptIndex + 1) % prompts.size
+    // The tree droops a little while you decide, and perks up if you skip. Continuing adds nothing.
+    var perked by remember { mutableStateOf(false) }
+    // Starts upright, then sighs down a moment later, so the change is seen rather than just there.
+    var drooping by remember { mutableStateOf(false) }
+    LaunchedEffect(tree != null) {
+        if (tree != null) {
+            delay(900)
+            drooping = true
+        }
+    }
+    val scope = rememberCoroutineScope()
+    val skipWithPerk: () -> Unit = {
+        if (tree == null || perked) {
+            onSkip()
+        } else {
+            perked = true
+            scope.launch {
+                delay(700)
+                onSkip()
+            }
         }
     }
     var pauseDone by remember { mutableStateOf(false) }
@@ -218,184 +210,108 @@ private fun GateContent(
         pauseDone = true
     }
 
-    // Surface supplies the theme's text colour; the calm background is drawn over its fill.
+    val buttonsAlpha by animateFloatAsState(
+        targetValue = if (pauseDone) 1f else 0f,
+        animationSpec = tween(900),
+        label = "choice"
+    )
+
+    // One job: decide. Tree, question, the numbers in a sentence, then the choice. The choice fades
+    // in over reserved space after the pause, so nothing above it moves.
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
       Box(modifier = Modifier.fillMaxSize()) {
         CalmBackground()
+        // Scrolls on small screens; the min height lets the spacers centre it on normal ones.
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+                .heightIn(min = maxHeight)
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Stats lead: what the last 24 hours add up to, before anything else.
-            AnimatedVisibility(
-                visible = usage != null,
-                enter = fadeIn(tween(800)) + slideInVertically(tween(900, easing = LinearOutSlowInEasing)) { -it / 3 }
-            ) {
-                usage?.let { UsageStats(appLabel = appLabel, usage = it, reelsToday = reelsToday) }
-            }
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 16.dp)) {
+            Spacer(Modifier.weight(1f))
+            if (tree != null) {
+                TreeScene(tree, line = null, reducedMotion = rememberReducedMotion(), droop = if (drooping && !perked) 1f else 0f)
+            } else {
                 SwayingSprout()
-                Text(
-                    text = "Take a second.",
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-                AnimatedContent(
-                    targetState = prompts[promptIndex],
-                    transitionSpec = {
-                        (fadeIn(tween(700, delayMillis = 150)) +
-                            slideInVertically(tween(900, easing = LinearOutSlowInEasing)) { it / 2 }) togetherWith
-                            (fadeOut(tween(500)) + slideOutVertically(tween(700)) { -it / 2 })
-                    },
-                    label = "prompt",
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .semantics { liveRegion = LiveRegionMode.Polite }
-                ) { prompt ->
-                    Text(
-                        text = prompt,
-                        fontSize = 19.sp,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
             }
 
-            // The choice waits out the pause, so the calm part gets its moment first.
-            AnimatedVisibility(
-                visible = pauseDone,
-                enter = fadeIn(tween(900)) + slideInVertically(tween(900, easing = LinearOutSlowInEasing)) { it / 3 }
+            Text(
+                text = "Open $appLabel?",
+                style = MaterialTheme.typography.headlineMedium.copy(fontFamily = DisplayFamily),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 32.dp)
+            )
+            usage?.let { UsageSentence(appLabel, it, Modifier.padding(top = 12.dp)) }
+
+            Spacer(Modifier.weight(1f))
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .padding(top = 32.dp)
+                    .graphicsLayer { alpha = buttonsAlpha }
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (tree != null) {
                     Text(
-                        text = "Still want to open $appLabel?",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
+                        text = "Skip, and ${treeNameInline(tree.name)} keeps growing.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 16.dp)
+                        modifier = Modifier.padding(bottom = 12.dp)
                     )
-                    Button(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
-                        Text("Skip for now")
-                    }
-                    OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                        Text("Continue to $appLabel")
-                    }
+                }
+                Button(
+                    onClick = skipWithPerk,
+                    enabled = pauseDone,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                ) {
+                    Text("Skip")
+                }
+                TextButton(
+                    onClick = onContinue,
+                    enabled = pauseDone,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp).heightIn(min = 48.dp)
+                ) {
+                    Text("Open $appLabel")
                 }
             }
+        }
         }
       }
     }
 }
 
 /**
- * The last 24 hours, and what that pace adds up to over a month and a year — framed as time that
- * can be taken back, not as a telling-off. The numbers count up as they arrive.
+ * The numbers as one plain sentence, figures in bold: the last 24 hours in this app, and what
+ * that pace adds up to over a month and a year.
  */
 @Composable
-private fun UsageStats(appLabel: String, usage: GateUsage, reelsToday: Int?) {
-    val countUp = remember { Animatable(0f) }
-    LaunchedEffect(usage.ms) { countUp.animateTo(1f, tween(1400, easing = FastOutSlowInEasing)) }
-    val shownMs = (usage.ms * countUp.value).toLong()
-    val meaningful = usage.ms >= 60_000L
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-        ),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
-                .semantics(mergeDescendants = true) { }
-        ) {
-            Text(
-                text = "Last 24 hours on $appLabel",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = formatUsage(shownMs),
-                fontSize = 36.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            if (reelsToday != null) {
-                Text(
-                    text = if (reelsToday == 1) "1 reel today" else "$reelsToday reels today",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (meaningful) {
-                Text(
-                    text = "At this pace, that's",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    ProjectionTile(value = formatProjection(shownMs * 30), label = "a month", modifier = Modifier.weight(1f))
-                    ProjectionTile(value = formatProjection(shownMs * 365), label = "a year", modifier = Modifier.weight(1f))
-                }
-                Text(
-                    text = "Time you can take back, one skip at a time.",
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 14.dp)
-                )
-            } else {
-                Text(
-                    text = "A light day so far — nice.",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-            if (!usage.fromSystem) {
-                Text(
-                    text = "Counted since ReclaimLife started timing. Allow Usage access on its Home screen for the full 24 hours.",
-                    fontSize = 11.sp,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 10.dp)
-                )
-            }
+private fun UsageSentence(appLabel: String, usage: GateUsage, modifier: Modifier = Modifier) {
+    val strong = SpanStyle(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+    val text = buildAnnotatedString {
+        if (usage.ms < 60_000L) {
+            append("Light day on $appLabel so far.")
+        } else {
+            withStyle(strong) { append(formatUsage(usage.ms)) }
+            append(" here in the last 24 hours.\nAt this pace, that's ")
+            withStyle(strong) { append(formatProjection(usage.ms * 30)) }
+            append(" a month and ")
+            withStyle(strong) { append(formatProjection(usage.ms * 365)) }
+            append(" a year.")
         }
     }
-}
-
-@Composable
-private fun ProjectionTile(value: String, label: String, modifier: Modifier = Modifier) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
         modifier = modifier
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), RoundedCornerShape(16.dp))
-            .padding(vertical = 12.dp, horizontal = 8.dp)
-    ) {
-        Text(
-            text = "≈ $value",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(text = label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    )
 }
 
-/** A slowly shifting wash of colour with a few soft specks of light drifting up through it. */
 @Composable
 private fun CalmBackground() {
     val surface = MaterialTheme.colorScheme.surface

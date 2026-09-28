@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Auto Backup on Android 11 and lower. Only three DataStore files (settings: nickname, limits,
-     pause, baseline; reel_usage: today's counts, day history, pause log; daily_usage: per-app
-     minutes per day) are backed up. Glance's widget state isn't, since widget IDs don't carry over
+     pause, baseline, tree name, limit changes; reel_usage: today's counts, day history, pause log,
+     swaps; daily_usage: per-app minutes per day, tree growth) are backed up. Glance's widget state isn't, since widget IDs don't carry over
      to a new device, and neither is pause_intention: a typed intention never leaves the phone.
      Keep in sync with data_extraction_rules.xml and PRIVACY.md. -->
 <full-backup-content>

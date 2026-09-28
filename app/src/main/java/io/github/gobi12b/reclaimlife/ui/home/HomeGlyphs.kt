@@ -12,9 +12,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -200,7 +202,7 @@ internal fun InsightGlyph(kind: InsightKind, modifier: Modifier = Modifier) {
                 InsightKind.APP_DRIVEN, InsightKind.CREPT_UP, InsightKind.HEAVIER -> {
                     listOf(9f, 15f).forEach { y -> drawPath(wave(u, y), color, style = stroke) }
                 }
-                InsightKind.CUT_BIG -> drawPath(star(u), color, style = stroke)
+                InsightKind.CUT_BIG -> drawStar(color, filled = false)
                 InsightKind.CUT -> drawLeaf(color, filled = false)
                 InsightKind.STEADY -> {
                     val stand = Path().apply {
@@ -242,4 +244,56 @@ private fun star(u: Float): Path = Path().apply {
         if (i == 0) moveTo(x, y) else lineTo(x, y)
     }
     close()
+}
+
+private fun DrawScope.drawStar(color: Color, filled: Boolean) {
+    val u = size.width / 24f
+    if (filled) {
+        drawPath(star(u), color)
+    } else {
+        drawPath(star(u), color, style = Stroke(width = 2 * u, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+/** An "i" in a ring: more detail behind a tap. Decorative: the button carries the label. */
+@Composable
+internal fun InfoGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.clearAndSetSemantics { }) {
+        val stroke = size.minDimension * 0.09f
+        drawCircle(color, radius = size.minDimension / 2 - stroke / 2, style = Stroke(stroke))
+        drawCircle(color, radius = stroke * 0.75f, center = Offset(size.width / 2, size.height * 0.3f))
+        drawLine(
+            color,
+            Offset(size.width / 2, size.height * 0.45f),
+            Offset(size.width / 2, size.height * 0.72f),
+            strokeWidth = stroke * 1.2f,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+/** A star: a new stage or a streak boost for the tree, and the insight's big cut. Decorative. */
+@Composable
+internal fun StarGlyph(color: Color, modifier: Modifier = Modifier, filled: Boolean = true) {
+    Canvas(modifier = modifier.clearAndSetSemantics { }) { drawStar(color, filled) }
+}
+
+/**
+ * A crescent: a circle minus a slightly smaller one pushed up and to the right — the same
+ * construction as the moon over a resting tree, scaled to [radius] around [center].
+ */
+internal fun crescentPath(center: Offset, radius: Float): Path {
+    val k = radius / 11f
+    val outer = Path().apply { addOval(Rect(center, radius)) }
+    val inner = Path().apply { addOval(Rect(center + Offset(5f * k, -4f * k), 10f * k)) }
+    return Path().apply { op(outer, inner, PathOperation.Difference) }
+}
+
+/** A filled crescent for a resting tree. Decorative: the words beside it say so. */
+@Composable
+internal fun MoonGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.clearAndSetSemantics { }) {
+        val u = size.width / 24f
+        drawPath(crescentPath(Offset(11 * u, 13 * u), 9 * u), color)
+    }
 }

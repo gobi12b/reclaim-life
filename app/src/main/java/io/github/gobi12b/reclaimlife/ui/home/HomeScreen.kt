@@ -33,7 +33,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.gobi12b.reclaimlife.MainViewModel
+import io.github.gobi12b.reclaimlife.data.DayOutcome
 import io.github.gobi12b.reclaimlife.data.HomeInsight
+import io.github.gobi12b.reclaimlife.data.localDayStart
+import io.github.gobi12b.reclaimlife.data.pausedMsOn
+import io.github.gobi12b.reclaimlife.data.raiseTreeLine
 import io.github.gobi12b.reclaimlife.data.InsightAction
 import io.github.gobi12b.reclaimlife.data.formatSaved
 import io.github.gobi12b.reclaimlife.data.formatUsage
@@ -56,7 +60,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * One focal point: a greeting, any alerts, then the hero (time won back, grown into a plant), the
+ * One focal point: a greeting, any alerts, then the hero (time won back, and your tree), the
  * Limits pill (moved above the hero when it's nearly out), one insight, the last 24 hours and the
  * week on the background, and a quiet Pause at the end. State, ordering and sheets live here; the
  * pieces live in HomeHero, HomeSections and HomeBanners.
@@ -87,18 +91,28 @@ fun HomeScreen(
     val dayHistory by viewModel.dayHistory.collectAsStateWithLifecycle()
     val trackedApps by viewModel.trackedApps.collectAsStateWithLifecycle()
     val showAppsCard by viewModel.showAppsCard.collectAsStateWithLifecycle()
+    val treeName by viewModel.treeName.collectAsStateWithLifecycle()
     val name = nickname.trim()
 
     val largeFont = LocalDensity.current.fontScale >= 1.5f
     val reducedMotion = rememberReducedMotion()
     val accessibilityStatus = rememberAccessibilityStatus()
     val hasUsageAccess = rememberHasUsageAccess()
-    val progress = rememberProgress(todayCount, pausedFromMs, pausedUntilMs, trackedApps, hasUsageAccess)
+    // Limits and history are keys too, so a raise or a put-back updates the tree's line straight away.
+    val progress = rememberProgress(
+        todayCount, pausedFromMs, pausedUntilMs, trackedApps, hasUsageAccess,
+        dailyLimit, hourlyLimit, limitMode, dayHistory, treeName, accessibilityStatus
+    )
+    // Quiet days (counter on, no reels, never closed out) count as within, as they do for the tree.
+    val weekHistory = remember(dayHistory, progress?.quietDays) {
+        progress?.quietDays.orEmpty().associateWith { DayOutcome.WITHIN } + dayHistory
+    }
     // An uninstalled tracked app is hidden here; its history is kept and Settings says "Not installed".
     val installedApps = remember(trackedApps) { trackedApps.filter { isInstalled(context, it.packageName) } }
 
     var showPauseSheet by remember { mutableStateOf(false) }
     var showSavedDetails by remember { mutableStateOf(false) }
+    var showTreeSheet by remember { mutableStateOf(false) }
     var swapOnDemand by remember { mutableStateOf(false) }
     var lowerLimitPrefill by remember { mutableStateOf<Int?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -155,7 +169,13 @@ fun HomeScreen(
                     .padding(horizontal = HomeLayout.gutter)
                     .padding(top = Spacing.xs, bottom = Spacing.xxl)
             ) {
-                HomeHeader(name = name, nowMs = nowMs, onSettings = onOpenSettings, largeFont = largeFont)
+                HomeHeader(
+                    name = name,
+                    nowMs = nowMs,
+                    onSettings = onOpenSettings,
+                    largeFont = largeFont,
+                    onPause = if (!isPaused && !pendingStart) ({ showPauseSheet = true }) else null
+                )
 
                 // 1. Alerts, each only when it applies. The spacer rides inside the animation so
                 // the gap opens and closes with the banner.
@@ -203,7 +223,7 @@ fun HomeScreen(
                 val loaded = progress
                 when {
                     loaded == null -> HeroSkeleton(
-                        message = if (hasUsageAccess) "Working out your starting point…" else "Adding up your last 24 hours…",
+                        message = if (hasUsageAccess) "Getting your baseline…" else "Loading…",
                         reducedMotion = reducedMotion
                     )
                     loaded.hasBaseline -> SavedHero(
@@ -212,9 +232,10 @@ fun HomeScreen(
                         hasUsageAccess = hasUsageAccess,
                         largeFont = largeFont,
                         reducedMotion = reducedMotion,
-                        onOpenDetails = { showSavedDetails = true }
+                        onOpenDetails = { showSavedDetails = true },
+                        onOpenTree = { showTreeSheet = true }
                     )
-                    else -> Last24hHero(loaded, installedApps, hasUsageAccess, largeFont, reducedMotion)
+                    else -> Last24hHero(loaded, installedApps, hasUsageAccess, largeFont, reducedMotion, onOpenTree = { showTreeSheet = true })
                 }
 
                 // 3. The Limits pill, above the fold.
@@ -238,18 +259,13 @@ fun HomeScreen(
                 // 6. The week and streak.
                 Spacer(Modifier.height(Spacing.xxl))
                 WeekSection(
-                    dayHistory = dayHistory,
+                    dayHistory = weekHistory,
                     daysWithinLimit = daysWithinLimit,
                     daysExceededLimit = daysExceededLimit,
                     todayMs = nowMs,
                     largeFont = largeFont
                 )
 
-                // 7. Pause, last and low emphasis.
-                if (!isPaused && !pendingStart) {
-                    Spacer(Modifier.height(Spacing.xl))
-                    PauseTrackingButton(onPause = { showPauseSheet = true }, modifier = Modifier.align(Alignment.CenterHorizontally))
-                }
             }
             SnackbarHost(snackbar, modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp))
         }
@@ -259,7 +275,7 @@ fun HomeScreen(
             val calmLine = when {
                 progress == null -> "Take a breath."
                 progress.hasBaseline -> savedHeadline(progress).let {
-                    if (it.kind == HeadlineKind.TODAY) "You've won back ${formatSaved(it.ms)} today." else "Take a breath."
+                    if (it.kind == HeadlineKind.TODAY) "You've saved ${formatSaved(it.ms)} today." else "Take a breath."
                 }
                 else -> "${formatUsage(progress.last24hMs).replaceFirstChar { it.uppercase() }} on your apps in the last 24 hours."
             }
@@ -275,19 +291,37 @@ fun HomeScreen(
                 onScheduleRestOfToday = { reason, text ->
                     viewModel.scheduleRestOfToday(reason, text)
                     showPauseSheet = false
+                },
+                // Left out when the tree is already resting today for another reason.
+                treeName = progress?.tree?.takeIf { it.todayRest == null }?.name,
+                pausedTodayMs = remember(pauseLog, nowMs / 60_000L) {
+                    val start = localDayStart(nowMs)
+                    pausedMsOn(pauseLog, start, localDayStart(nowMs, daysAgo = -1), nowMs)
                 }
             )
         }
 
         if (showSavedDetails) progress?.let { SavedDetailSheet(it, onDismiss = { showSavedDetails = false }) }
 
+        if (showTreeSheet) {
+            progress?.let {
+                TreeSheet(
+                    tree = it.tree,
+                    onDismiss = { showTreeSheet = false },
+                    onRename = viewModel::renameTree,
+                    onSetBack = viewModel::setBackLimit
+                )
+            }
+        }
+
         if (swapOnDemand) {
             SwapDialog(
                 activity = swapActivity,
                 deck = flashcardDeck,
-                headline = "Your 2-minute swap",
-                subtitle = "A small reset, whenever you want one.",
-                onClose = { swapOnDemand = false }
+                headline = "Your swap",
+                subtitle = "",
+                onClose = { swapOnDemand = false },
+                onCompleted = viewModel::recordSwapCompleted
             )
         }
 
@@ -301,7 +335,8 @@ fun HomeScreen(
                 onSave = {
                     viewModel.updateDailyLimit(it)
                     lowerLimitPrefill = null
-                }
+                },
+                treeLine = progress?.tree?.let { raiseTreeLine(it.name, it.todayRest) }
             )
         }
     }

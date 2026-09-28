@@ -82,6 +82,7 @@ import io.github.gobi12b.reclaimlife.ui.common.rememberAppIcon
 import io.github.gobi12b.reclaimlife.ui.common.rememberAppLabel
 import io.github.gobi12b.reclaimlife.ui.common.rememberHasUsageAccess
 import io.github.gobi12b.reclaimlife.ui.common.slotColor
+import io.github.gobi12b.reclaimlife.ui.home.Chevron
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -222,7 +223,7 @@ private fun StepScaffold(
                     .padding(8.dp)
                     .align(Alignment.TopStart)
             ) {
-                Text("← Back")
+                Text("Back")
             }
         }
         // Centered when it fits, scrollable when it doesn't (the permission disclosure is long).
@@ -267,16 +268,14 @@ private fun WelcomeStep(nickname: String, onNicknameChange: (String) -> Unit, on
     StepScaffold(
         stepIndex = OnboardingStep.WELCOME.index,
         title = "Take your time back.",
-        body = "ReclaimLife counts the reels you watch. When you reach the limit you choose, it swaps " +
-            "the next scroll for 2 minutes of something better — a breather, a few flashcards, or a " +
-            "quick journal note.",
-        primaryLabel = "Let's set it up",
+        body = "Set a reel limit. Hit it and get two minutes of something better.",
+        primaryLabel = "Get started",
         onPrimary = onNext,
         extraContent = {
             OutlinedTextField(
                 value = nickname,
                 onValueChange = { if (it.length <= 20) onNicknameChange(it) },
-                label = { Text("What should we call you? (optional)") },
+                label = { Text("Your name (optional)") },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -319,8 +318,8 @@ private fun AppsStep(
 
     StepScaffold(
         stepIndex = OnboardingStep.APPS.index,
-        title = "Which apps pull you in?",
-        body = "Pick the ones you'd like a little help with. You can change this anytime.",
+        title = "Which apps?",
+        body = "Pick the ones you want help with.",
         primaryLabel = "Continue",
         primaryEnabled = apps.isNotEmpty(),
         onPrimary = onNext,
@@ -329,7 +328,7 @@ private fun AppsStep(
             Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
                 val rows = suggested
                 if (rows == null) {
-                    Text("Looking for your apps…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Loading apps…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     if (rows.isEmpty()) {
                         OtherAppsRow(filled = true, onClick = { showPicker = true })
@@ -347,8 +346,8 @@ private fun AppsStep(
                     if (rows.isNotEmpty()) OtherAppsRow(filled = false, onClick = { showPicker = true })
                 }
                 val helper = when {
-                    apps.isEmpty() -> "Pick at least one app to continue."
-                    full -> "8 is the most, untick one to swap."
+                    apps.isEmpty() -> "Pick at least one."
+                    full -> "8 apps max."
                     else -> null
                 }
                 if (helper != null) {
@@ -363,9 +362,9 @@ private fun AppsStep(
                         .padding(vertical = 8.dp)
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Take a short breath before opening these apps", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text("Pause before opening", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         Text(
-                            "A 2-second pause and a look at your day. You can turn it off anytime.",
+                            "A 2-second breath first.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -433,10 +432,13 @@ private fun OtherAppsRow(filled: Boolean, onClick: () -> Unit) {
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = if (filled) 16.dp else 0.dp, vertical = 12.dp)
     ) {
-        Text("Other apps ›", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Other apps", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            Chevron(MaterialTheme.colorScheme.primary)
+        }
         if (filled) {
             Text(
-                "None of the usual apps are here. Add the ones you use.",
+                "Add the apps you use.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
@@ -465,10 +467,9 @@ private fun LimitStep(
         title = when (limitMode) {
             LimitMode.DAILY -> "How many reels a day?"
             LimitMode.HOURLY -> "How many reels an hour?"
-            LimitMode.BOTH -> "Set your two limits."
+            LimitMode.BOTH -> "Set your limits."
         },
-        body = "Pick " + (if (limitMode == LimitMode.BOTH) "numbers that feel" else "a number that feels") +
-            " doable today — there's no wrong answer. You can bring it down bit by bit as it gets easier.",
+        body = "Start easy. Lower it later.",
         primaryLabel = "Continue",
         onPrimary = onNext,
         onBack = onBack,
@@ -500,9 +501,9 @@ private fun LimitStep(
                             OptionCard(
                                 title = mode.label,
                                 description = when (mode) {
-                                    LimitMode.DAILY -> "One number for the whole day."
-                                    LimitMode.HOURLY -> "Reels for the hour, then a 2-minute break before any more."
-                                    LimitMode.BOTH -> "A daily cap, plus a 2-minute break whenever an hour's reels run out."
+                                    LimitMode.DAILY -> "One limit per day."
+                                    LimitMode.HOURLY -> "Resets every hour."
+                                    LimitMode.BOTH -> "Hourly and daily."
                                 },
                                 selected = mode == limitMode,
                                 onSelect = { onModeChange(mode) }
@@ -522,7 +523,7 @@ private fun LimitStep(
                     // Not blocked — just said, so nobody sets up a limit that silently never does anything.
                     if (limitMode == LimitMode.BOTH && hourlyLimit >= dailyLimit) {
                         Text(
-                            text = "Your hourly limit is at or above your daily one, so it'll never kick in.",
+                            text = "Hourly is higher than daily, so it won't apply.",
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -559,12 +560,11 @@ private fun PermissionStep(onNext: () -> Unit, onBack: (() -> Unit)?) {
     if (!accessibilityDone) {
         StepScaffold(
             stepIndex = OnboardingStep.PERMISSION.index,
-            title = "One permission to make it real.",
-            body = "To count reels and give you a moment before opening your apps, ReclaimLife needs " +
-                "Accessibility access. Here's exactly what that means:",
+            title = "Allow Accessibility",
+            body = "Needed to count reels.",
             // Grant is the primary action; the button itself is the explicit consent to the
             // disclosure above it (Play's prominent-disclosure requirement for the Accessibility API).
-            primaryLabel = "Agree & open Accessibility settings",
+            primaryLabel = "Agree & open settings",
             onPrimary = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
             onBack = onBack,
             secondaryLabel = "Not now",
@@ -572,13 +572,11 @@ private fun PermissionStep(onNext: () -> Unit, onBack: (() -> Unit)?) {
             extraContent = {
                 AccessibilityDisclosure(modifier = Modifier.padding(bottom = 16.dp))
                 TextButton(onClick = { showHelp = !showHelp }) {
-                    Text("Switch won't move?" + if (showHelp) " ▴" else " ▾")
+                    Text("Can't turn it on?" + if (showHelp) " ▴" else " ▾")
                 }
                 if (showHelp) {
                     Text(
-                        text = "In Accessibility, find ReclaimLife under Downloaded apps and turn it on. " +
-                            "If the switch won't move: Settings → Apps → ReclaimLife → ⋮ menu → " +
-                            "Allow restricted settings, then try again.",
+                        text = "Settings → Apps → ReclaimLife → ⋮ → Allow restricted settings. Then try again.",
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -590,18 +588,16 @@ private fun PermissionStep(onNext: () -> Unit, onBack: (() -> Unit)?) {
     } else {
         StepScaffold(
             stepIndex = OnboardingStep.PERMISSION.index,
-            title = "See how much time you win back.",
-            body = "With Usage access, ReclaimLife reads how long your apps were open over the last two " +
-                "weeks, so it can show the time you save from here on. It only looks at the apps you " +
-                "chose, and nothing leaves your phone.",
-            primaryLabel = if (hasUsageAccess) "Continue" else "Allow Usage access",
+            title = "Allow Usage access",
+            body = "Shows the time you save. Stays on your phone.",
+            primaryLabel = if (hasUsageAccess) "Continue" else "Allow",
             onPrimary = { if (hasUsageAccess) onNext() else runCatching { context.startActivity(usageAccessSettingsIntent()) } },
             onBack = { if (enabled) onBack?.invoke() else accessibilityDone = false },
             secondaryLabel = if (hasUsageAccess) null else "Not now",
             onSecondary = onNext,
             extraContent = {
                 Text(
-                    text = if (enabled) "Accessibility access is on ✓" else "Accessibility is off for now — you can turn it on from Home.",
+                    text = if (enabled) "Accessibility is on" else "Accessibility off. Turn it on from Home.",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
@@ -625,9 +621,8 @@ private fun SwapStep(
 ) {
     StepScaffold(
         stepIndex = OnboardingStep.SWAP.index,
-        title = "Pick your 2-minute swap.",
-        body = "When you reach your limit, this is what you'll get instead of more reels. " +
-            "You can change it anytime from Settings.",
+        title = "Pick a swap",
+        body = "What you'll do instead at your limit.",
         primaryLabel = "Continue",
         onPrimary = onNext,
         onBack = onBack,
@@ -655,9 +650,8 @@ private fun ReadyStep(
     val name = nickname.trim()
     StepScaffold(
         stepIndex = OnboardingStep.READY.index,
-        title = if (name.isEmpty()) "You're all set." else "You're all set, $name.",
-        body = "When you reach your limit, 2 minutes of ${activity.label.lowercase()} will be ready for " +
-            "you. Home shows the time you win back; your apps, limits and swap are in Settings.",
+        title = if (name.isEmpty()) "All set." else "All set, $name.",
+        body = "At your limit: 2 minutes of ${activity.label.lowercase()}.",
         primaryLabel = "Let's go",
         onPrimary = onFinish,
         onBack = onBack

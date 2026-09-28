@@ -1,5 +1,7 @@
 package io.github.gobi12b.reclaimlife.ui.replacement
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -8,9 +10,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -37,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -49,8 +54,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.gobi12b.reclaimlife.data.FlashcardDeck
 import io.github.gobi12b.reclaimlife.data.JOURNAL_PROMPTS
+import io.github.gobi12b.reclaimlife.data.READINGS
 import io.github.gobi12b.reclaimlife.data.ReplacementActivity
 import io.github.gobi12b.reclaimlife.data.SWAP_SECONDS
+import io.github.gobi12b.reclaimlife.ui.theme.DisplayFamily
 import kotlinx.coroutines.delay
 
 /**
@@ -67,7 +74,9 @@ fun SwapSession(
     finishLabel: String,
     onFinish: () -> Unit,
     onSkip: (() -> Unit)?,
-    skipLabel: String = "Skip for now"
+    skipLabel: String = "Skip for now",
+    /** "That swap helps Fern grow." under the finish button once the time is up, or null. */
+    afterLine: String? = null
 ) {
     var secondsLeft by remember { mutableIntStateOf(SWAP_SECONDS) }
     LaunchedEffect(Unit) {
@@ -98,19 +107,23 @@ fun SwapSession(
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp)
         )
-        Text(
-            text = subtitle,
-            fontSize = 15.sp,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
-        )
+        if (subtitle.isNotEmpty()) {
+            Text(
+                text = subtitle,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
+            )
+        } else {
+            Spacer(Modifier.height(16.dp))
+        }
         LinearProgressIndicator(
             progress = { 1f - secondsLeft.toFloat() / SWAP_SECONDS },
             modifier = Modifier.fillMaxWidth()
         )
         Text(
-            text = if (done) "2 minutes — nicely done" else "%d:%02d left".format(secondsLeft / 60, secondsLeft % 60),
+            text = if (done) "Nicely done" else "%d:%02d left".format(secondsLeft / 60, secondsLeft % 60),
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp, bottom = 24.dp)
@@ -120,6 +133,7 @@ fun SwapSession(
             ReplacementActivity.BREATHING -> BreathingExercise()
             ReplacementActivity.FLASHCARDS -> FlashcardDeckView(deck)
             ReplacementActivity.JOURNALING -> JournalPrompt()
+            ReplacementActivity.READING -> ReadingCard()
         }
 
         Button(
@@ -129,7 +143,16 @@ fun SwapSession(
                 .fillMaxWidth()
                 .padding(top = 32.dp)
         ) {
-            Text(if (done) finishLabel else "Keep going — almost there")
+            Text(if (done) finishLabel else "Keep going")
+        }
+        if (done && afterLine != null) {
+            Text(
+                afterLine,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            )
         }
         if (onSkip != null) {
             TextButton(onClick = onSkip, modifier = Modifier.padding(top = 4.dp)) {
@@ -163,7 +186,7 @@ private fun BreathingExercise() {
                 .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
         )
         Text(
-            text = if (breathingIn) "Breathe in…" else "Breathe out…",
+            text = if (breathingIn) "Breathe in" else "Breathe out",
             fontSize = 20.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -207,7 +230,7 @@ private fun FlashcardDeckView(deck: FlashcardDeck) {
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
             )
             Text(
-                text = if (flipped) "Tap to flip back" else "Tap to see the answer",
+                text = if (flipped) "Tap to flip back" else "Tap for answer",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp)
@@ -224,7 +247,7 @@ private fun FlashcardDeckView(deck: FlashcardDeck) {
             index++
             flipped = false
         }) {
-            Text("Next card →")
+            Text("Next card")
         }
     }
 }
@@ -245,7 +268,7 @@ private fun JournalPrompt() {
     OutlinedTextField(
         value = text,
         onValueChange = { text = it },
-        placeholder = { Text("Write whatever comes to mind…") },
+        placeholder = { Text("Anything on your mind") },
         minLines = 5,
         modifier = Modifier
             .fillMaxWidth()
@@ -253,13 +276,55 @@ private fun JournalPrompt() {
     )
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
         Text(
-            text = "Just for you — it isn't saved.",
+            text = "Not saved.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .weight(1f)
-                .semantics { contentDescription = "Just for you, it isn't saved." }
+                .semantics { contentDescription = "Not saved." }
         )
         TextButton(onClick = { index++ }) { Text("Different prompt") }
+    }
+}
+
+/** A short poem, quote or idea. Ideas can link out for later; the swap itself stays offline. */
+@Composable
+private fun ReadingCard() {
+    val context = LocalContext.current
+    val readings = remember { READINGS.shuffled() }
+    var index by remember { mutableIntStateOf(0) }
+    val reading = readings[index % readings.size]
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            reading.kind.label.uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            reading.text,
+            style = MaterialTheme.typography.titleLarge.copy(fontFamily = DisplayFamily, fontWeight = FontWeight.Normal),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 12.dp)
+        )
+        reading.source?.let {
+            Text(
+                "— $it",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            TextButton(onClick = { index++ }) { Text("Another one") }
+            reading.url?.let { url ->
+                TextButton(onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                }) { Text("Read more") }
+            }
+        }
     }
 }

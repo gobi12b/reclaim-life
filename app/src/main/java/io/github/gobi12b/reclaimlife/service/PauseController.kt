@@ -99,7 +99,7 @@ class PauseController(private val app: ReclaimLifeApp) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 manager.createNotificationChannel(
                     NotificationChannel(CHANNEL_ID, "Pause starting", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                        description = "A one-minute heads-up before Rest of today starts, with Cancel."
+                        description = "A heads-up before Rest of today starts."
                         setSound(null, null)
                     }
                 )

@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.gobi12b.reclaimlife.MainViewModel
+import io.github.gobi12b.reclaimlife.data.raiseTreeLine
+import io.github.gobi12b.reclaimlife.ui.common.rememberTreeToday
 import io.github.gobi12b.reclaimlife.data.EARLIER_TODAY_KEY
 import io.github.gobi12b.reclaimlife.data.HOURLY_BREAKS_WITHIN_LIMIT
 import io.github.gobi12b.reclaimlife.data.LimitMode
@@ -101,6 +103,7 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
         }
     }
     val isPaused = nowMs in pausedFromMs until pausedUntilMs
+    val treeToday = rememberTreeToday(dailyLimit, hourlyLimit, limitMode, pausedFromMs, pausedUntilMs)
     val status = limitStatus(limitMode, dailyLimit, extraAllowance, todayCount, hourlyLimit, recentReelTimes, nowMs)
 
     var editDaily by remember { mutableStateOf(false) }
@@ -135,7 +138,7 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
             val headline = when {
                 isPaused -> "Paused · back at $resumesAt"
                 status.hourlyUnblockAtMs != null && !status.dailyReached ->
-                    "Back in ${formatPauseRemaining(status.hourlyUnblockAtMs - nowMs)}, or after a 2-minute swap"
+                    "Back in ${formatPauseRemaining(status.hourlyUnblockAtMs - nowMs)}"
                 status.hourlyOnly -> "${status.left} reels left this hour"
                 status.dailyReached -> "0 left today"
                 else -> "${status.left} reels left today"
@@ -168,9 +171,9 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Reels today by app", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+                    Text("Today by app", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
                     if (rows.isEmpty()) {
-                        Text("No reels yet today.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                        Text("No reels yet.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                     }
                     rows.forEach { (key, n) ->
                         val slot = trackedApps.firstOrNull { it.packageName == key }?.slot
@@ -190,7 +193,7 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
                     }
                     if (limitMode.usesDaily) {
                         Text(
-                            "Extras used today: $extraAttempts of ${BlockActivity.MAX_EXTRA_ASKS}",
+                            "Extras: $extraAttempts of ${BlockActivity.MAX_EXTRA_ASKS}",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 14.dp)
@@ -200,7 +203,7 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
                     // belongs with the limits rather than on the progress screen.
                     if (limitMode == LimitMode.HOURLY) {
                         Text(
-                            "Hourly mode: a day counts as within with $HOURLY_BREAKS_WITHIN_LIMIT or fewer breaks that reopened reels.",
+                            "A day counts as within with $HOURLY_BREAKS_WITHIN_LIMIT or fewer breaks.",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 14.dp)
@@ -223,11 +226,11 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
                         EditRow("Hourly limit", "$hourlyLimit reels / hour") { editHourly = true }
                     }
                     HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                    EditRow("2-minute swap", swapActivity.label) { editSwap = true }
+                    EditRow("Swap", swapActivity.label) { editSwap = true }
                 }
             }
             Text(
-                "How you limit (daily, hourly or both) is in Settings.",
+                "Limit type is in Settings.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -245,7 +248,8 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
             onSave = {
                 viewModel.updateDailyLimit(it)
                 editDaily = false
-            }
+            },
+            treeLine = treeToday?.let { raiseTreeLine(it.name, it.rest) }
         )
     }
     if (editHourly) {
@@ -256,7 +260,8 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
             onSave = {
                 viewModel.updateHourlyLimit(it)
                 editHourly = false
-            }
+            },
+            treeLine = treeToday?.let { raiseTreeLine(it.name, it.rest) }
         )
     }
     if (editSwap) {
@@ -274,9 +279,10 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
         SwapDialog(
             activity = swapActivity,
             deck = flashcardDeck,
-            headline = "Your 2-minute swap",
-            subtitle = "Something better for the next two minutes.",
-            onClose = { swapOnDemand = false }
+            headline = "Your swap",
+            subtitle = "",
+            onClose = { swapOnDemand = false },
+            onCompleted = viewModel::recordSwapCompleted
         )
     }
 }
@@ -322,7 +328,7 @@ private fun LimitsHero(used: Int, total: Int, headline: String, detail: String, 
                 modifier = Modifier
                     .size(112.dp)
                     .alpha(if (dimmed) 0.5f else 1f)
-                    .clearAndSetSemantics { contentDescription = "$used of $total reels used. Mood: ${mood.label}" }
+                    .clearAndSetSemantics { contentDescription = "$used of $total reels used" }
             ) {
                 Canvas(modifier = Modifier.matchParentSize()) {
                     val stroke = 12.dp.toPx()
@@ -332,8 +338,8 @@ private fun LimitsHero(used: Int, total: Int, headline: String, detail: String, 
                     if (progress > 0f) drawArc(fill, -90f, 360f * progress, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Round))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(mood.emoji, fontSize = 28.sp)
-                    Text("$used / $total", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = onColor)
+                    Text("$used", style = MaterialTheme.typography.displaySmall, color = onColor)
+                    Text("of $total", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = onColor)
                 }
             }
             Column(modifier = Modifier.padding(start = 18.dp)) {

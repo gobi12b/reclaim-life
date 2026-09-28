@@ -17,7 +17,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
  * something to wait for.
  */
 object Motion {
-    const val plantGrowMs: Int = 700
+    const val treeGrowMs: Int = 900
+    const val treeDetailMs: Int = 400
+    const val treeCelebrateMs: Int = 1200
+    /** Per half-cycle of the idle sway, reversing between ±[treeSwayDegrees]. */
+    const val treeSwayMs: Int = 2600
+    const val treeSwayDegrees: Float = 3f
+    const val introStripStaggerMs: Int = 250
+    const val seedDropMs: Int = 500
     const val fadeMs: Int = 200
     const val expandMs: Int = 250
     const val gaugeMs: Int = 300

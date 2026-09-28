@@ -76,3 +76,14 @@ val PlantStemDark = Color(0xFF8FD19E)
 val PlantLeafDark = Color(0xFF6FC486)
 val PlantLeafBrightDark = Color(0xFFC3E58F)
 val PlantBloomDark = Color(0xFFF0C868)
+
+// Your tree. Decorative roles: what the tree means is always in the text beside it.
+val TreeBarkLight = Color(0xFF6E4B2A)
+val TreeBlossomLight = Color(0xFFFFF4D6)
+val TreeFruitLight = Color(0xFFE07B2A)
+val RestMoonLight = Color(0xFF8A6A1C)
+
+val TreeBarkDark = Color(0xFFC49A6C)
+val TreeBlossomDark = Color(0xFFFFF6E0)
+val TreeFruitDark = Color(0xFFF2A65A)
+val RestMoonDark = Color(0xFFF0DDA0)

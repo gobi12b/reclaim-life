@@ -68,6 +68,7 @@ import io.github.gobi12b.reclaimlife.data.TargetApps
 import io.github.gobi12b.reclaimlife.data.TrackedApp
 import io.github.gobi12b.reclaimlife.data.baselineResetAvailableAt
 import io.github.gobi12b.reclaimlife.data.baselineTotalMinutes
+import io.github.gobi12b.reclaimlife.data.raiseTreeLine
 import io.github.gobi12b.reclaimlife.service.proposeBaselineReset
 import io.github.gobi12b.reclaimlife.service.usageAccessSettingsIntent
 import io.github.gobi12b.reclaimlife.ui.common.AppPickerSheet
@@ -76,7 +77,9 @@ import io.github.gobi12b.reclaimlife.ui.common.isInstalled
 import io.github.gobi12b.reclaimlife.ui.common.rememberAppIcon
 import io.github.gobi12b.reclaimlife.ui.common.rememberAppLabel
 import io.github.gobi12b.reclaimlife.ui.common.rememberHasUsageAccess
+import io.github.gobi12b.reclaimlife.ui.common.rememberTreeToday
 import io.github.gobi12b.reclaimlife.ui.common.slotColor
+import io.github.gobi12b.reclaimlife.ui.home.Chevron
 import io.github.gobi12b.reclaimlife.ui.limits.EditHourlyLimitSheet
 import io.github.gobi12b.reclaimlife.ui.limits.EditLimitSheet
 import io.github.gobi12b.reclaimlife.ui.limits.EditSwapSheet
@@ -114,6 +117,7 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
     val pausedUntilMs by viewModel.pausedUntilMs.collectAsStateWithLifecycle()
     val hasUsageAccess = rememberHasUsageAccess()
     val isPaused = System.currentTimeMillis() in pausedFromMs until pausedUntilMs
+    val treeToday = rememberTreeToday(dailyLimit, hourlyLimit, limitMode, pausedFromMs, pausedUntilMs)
 
     var showPicker by remember { mutableStateOf(false) }
     /** Turning off the last Pause before opening: null for the main switch, else that app. */
@@ -155,7 +159,7 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
             SettingsCard {
                 SwitchRow(
                     title = "Pause before opening",
-                    subtitle = "A short breath and a look at your day before the feed starts.",
+                    subtitle = "A short breath first.",
                     checked = gateEnabled,
                     onCheckedChange = { on ->
                         if (on) viewModel.setGateEnabled(true) else {
@@ -165,7 +169,7 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
                     }
                 )
                 Column(modifier = Modifier.padding(horizontal = 20.dp).alpha(if (gateEnabled) 1f else 0.5f)) {
-                    Text("Wait before Skip and Continue appear", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Wait time", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         GATE_WAIT_OPTIONS_MS.forEach { ms ->
                             FilterChip(
@@ -199,7 +203,7 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
                 }
                 if (!gateEnabled) {
                     Text(
-                        "Turn on Pause before opening to choose apps.",
+                        "Turn on to choose apps.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
@@ -216,7 +220,7 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
                     Column(modifier = Modifier.weight(1f)) {
                         Text("My day starts at", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Late scrolling counts toward the day before. Time saved is spread over the 16 hours from 3 hours after this.",
+                            "Late scrolling counts toward the day before.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -230,10 +234,10 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
                         Text("Your baseline", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                         Text(
                             text = when {
-                                baselines.isEmpty() && !hasUsageAccess -> "Needs Usage access to read your usual time."
+                                baselines.isEmpty() && !hasUsageAccess -> "Needs Usage access."
                                 baselines.isEmpty() -> "Needs 3 days of phone history."
-                                else -> "${baselineTotalMinutes(baselines.filterKeys { k -> trackedApps.any { it.packageName == k } }.values)} min a day before ReclaimLife" +
-                                    (resetAvailableAt?.let { " · reset available ${DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(it))}" } ?: "")
+                                else -> "${baselineTotalMinutes(baselines.filterKeys { k -> trackedApps.any { it.packageName == k } }.values)} min a day" +
+                                    (resetAvailableAt?.let { " · reset on ${DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(it))}" } ?: "")
                             },
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -267,7 +271,8 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
                 onLowerDailyToCap = { viewModel.updateDailyLimit(MAX_DAILY_REEL_LIMIT) },
                 onEditHourly = { editHourly = true },
                 onChangeSwap = { editSwap = true },
-                onTrySwap = { tryingSwap = true }
+                onTrySwap = { tryingSwap = true },
+                dropTreeLine = treeToday?.let { raiseTreeLine(it.name, it.rest, dropping = true) }
             )
             PrivacyPolicyLink(modifier = Modifier.align(Alignment.CenterHorizontally))
         }
@@ -294,9 +299,9 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
             text = {
                 Text(
                     if (skipped > 0) {
-                        "It's helped you skip $skipped " + (if (skipped == 1) "open" else "opens") + " this week."
+                        "You skipped $skipped " + (if (skipped == 1) "open" else "opens") + " this week."
                     } else {
-                        "It gives you a moment to choose before the feed starts."
+                        "It gives you a moment to choose."
                     }
                 )
             },
@@ -320,8 +325,7 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
             title = { Text("Reset your baseline?") },
             text = {
                 Text(
-                    "Your baseline goes from $old to $new min a day, measured from your last 14 days. " +
-                        "You can do this once every 30 days."
+                    "$old → $new min a day, from your last 14 days. Once every 30 days."
                 )
             },
             confirmButton = { Button(onClick = { resetProposal = null }) { Text("Keep $old") } },
@@ -338,7 +342,7 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
         AlertDialog(
             onDismissRequest = { resetUnavailable = false },
             title = { Text("Not enough history yet") },
-            text = { Text("A new baseline needs Usage access and at least 3 days of your phone's history.") },
+            text = { Text("Needs Usage access and 3 days of history.") },
             confirmButton = { Button(onClick = { resetUnavailable = false }) { Text("OK") } }
         )
     }
@@ -352,7 +356,8 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
             onSave = {
                 viewModel.updateDailyLimit(it)
                 editDaily = false
-            }
+            },
+            treeLine = treeToday?.let { raiseTreeLine(it.name, it.rest) }
         )
     }
     if (editHourly) {
@@ -363,7 +368,8 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
             onSave = {
                 viewModel.updateHourlyLimit(it)
                 editHourly = false
-            }
+            },
+            treeLine = treeToday?.let { raiseTreeLine(it.name, it.rest) }
         )
     }
     if (editSwap) {
@@ -382,8 +388,9 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modif
             activity = swapActivity,
             deck = flashcardDeck,
             headline = "Try your swap",
-            subtitle = "This is what you'll get when you reach your limit.",
-            onClose = { tryingSwap = false }
+            subtitle = "What you'll get at your limit.",
+            onClose = { tryingSwap = false },
+            onCompleted = viewModel::recordSwapCompleted
         )
     }
 }
@@ -515,7 +522,9 @@ private fun SetupCard(
     onLowerDailyToCap: () -> Unit,
     onEditHourly: () -> Unit,
     onChangeSwap: () -> Unit,
-    onTrySwap: () -> Unit
+    onTrySwap: () -> Unit,
+    /** "Fern rests for today if you switch.", or null when the tree is already resting. */
+    dropTreeLine: String?
 ) {
     var confirmMode by remember { mutableStateOf<LimitMode?>(null) }
 
@@ -541,10 +550,10 @@ private fun SetupCard(
             }
             Text(
                 text = when (limitMode) {
-                    LimitMode.DAILY -> "One cap for the whole day."
-                    LimitMode.HOURLY -> "A 2-minute break whenever an hour's reels run out; no daily cap."
-                    LimitMode.BOTH -> "A daily cap, plus a 2-minute break whenever an hour's reels run out."
-                } + if (isPaused && limitMode != LimitMode.BOTH) " While paused you can only add a limit." else "",
+                    LimitMode.DAILY -> "One limit per day."
+                    LimitMode.HOURLY -> "Resets every hour."
+                    LimitMode.BOTH -> "Hourly and daily."
+                } + if (isPaused && limitMode != LimitMode.BOTH) " Paused: you can only add a limit." else "",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
@@ -558,7 +567,7 @@ private fun SetupCard(
             if (dailyLimit > MAX_DAILY_REEL_LIMIT) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 8.dp)) {
                     Text(
-                        text = "Most people start at $MAX_DAILY_REEL_LIMIT or under.",
+                        text = "Try $MAX_DAILY_REEL_LIMIT or under.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
@@ -573,7 +582,7 @@ private fun SetupCard(
         }
         Divider()
         SettingRow(
-            title = "2-minute swap",
+            title = "Swap",
             value = "${swapActivity.emoji} ${swapActivity.label}$swapDetail",
             onClick = onChangeSwap,
             trailing = { TextButton(onClick = onTrySwap) { Text("Try it") } }
@@ -586,13 +595,16 @@ private fun SetupCard(
             onDismissRequest = { confirmMode = null },
             title = { Text("Drop the $dropped limit?") },
             text = {
-                Text(
-                    if (dropped == "daily") {
-                        "Without a daily limit, the hours can quietly add up. You can switch back anytime."
-                    } else {
-                        "The hourly limit helps keep one sitting from running long. You can switch back anytime."
-                    }
-                )
+                Column {
+                    Text(
+                        if (dropped == "daily") {
+                            "Hours can add up without it."
+                        } else {
+                            "It keeps one sitting short."
+                        }
+                    )
+                    dropTreeLine?.let { Text(it, modifier = Modifier.padding(top = 12.dp)) }
+                }
             },
             confirmButton = {
                 Button(onClick = { confirmMode = null }) { Text("Keep ${limitMode.label.lowercase()}") }
@@ -625,7 +637,7 @@ private fun SettingRow(title: String, value: String, onClick: () -> Unit, traili
         if (trailing != null) {
             trailing()
         } else {
-            Text("›", fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clearAndSetSemantics { })
+            Chevron(MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

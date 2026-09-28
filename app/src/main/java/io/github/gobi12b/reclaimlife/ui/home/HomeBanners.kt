@@ -118,36 +118,27 @@ internal fun AccessibilityBanner(status: AccessibilityStatus, reducedMotion: Boo
     HomeBanner(
         tone = BannerTone.ALERT,
         glyph = { AlertGlyph() },
-        title = if (notRunning) "The reel counter stopped" else "Reels aren't being counted",
-        body = if (notRunning) {
-            "Accessibility is on for ReclaimLife, but Android isn't running it — often after a crash " +
-                "or battery saver. Turn it off and on again to restart counting. Time saved leaves these hours out."
-        } else {
-            "Accessibility access for ReclaimLife is off, so nothing is counted or blocked. " +
-                "Time saved leaves these hours out."
-        },
+        title = if (notRunning) "Counter stopped" else "Reels aren't counted",
+        body = if (notRunning) "Turn Accessibility off and on again." else "Accessibility is off.",
         modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite }
     ) {
         Button(onClick = { showConsent = true }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (notRunning) "Restart it in Accessibility settings" else "Turn on Accessibility access")
+            Text(if (notRunning) "Restart" else "Turn on")
         }
         TextButton(
             onClick = { showHelp = !showHelp },
             colors = ButtonDefaults.textButtonColors(contentColor = onColor),
             modifier = Modifier.semantics { stateDescription = if (showHelp) "Expanded" else "Collapsed" }
         ) {
-            Text(if (notRunning) "Keeps stopping?" else "Switch won't move?")
+            Text(if (notRunning) "Keeps stopping?" else "Can't turn it on?")
             Chevron(onColor, rotation = if (showHelp) -90f else 90f)
         }
         AnimatedVisibility(visible = showHelp, enter = expandEnter(reducedMotion), exit = expandExit(reducedMotion)) {
             Text(
                 text = if (notRunning) {
-                    "Some phones stop background services to save battery. Settings → Apps → " +
-                        "ReclaimLife → Battery → Unrestricted keeps the counter running."
+                    "Settings → Apps → ReclaimLife → Battery → Unrestricted."
                 } else {
-                    "In Accessibility, find ReclaimLife under Downloaded apps and turn it on. " +
-                        "If the switch won't move: Settings → Apps → ReclaimLife → ⋮ menu → " +
-                        "Allow restricted settings, then try again."
+                    "Settings → Apps → ReclaimLife → ⋮ → Allow restricted settings. Then try again."
                 },
                 style = MaterialTheme.typography.bodySmall
             )
@@ -192,9 +183,9 @@ internal fun PausedBanner(remainingMs: Long, resumesAtMs: Long, intention: Strin
         glyph = { PausedGlyph() },
         title = "Paused · ${formatPauseRemaining(remainingMs)} left",
         body = if (intention.isNullOrBlank()) {
-            "Reels aren't counted or blocked. Back on by itself at $resumesAt."
+            "Back on at $resumesAt."
         } else {
-            "Enjoy: $intention · back at $resumesAt"
+            "$intention · back at $resumesAt"
         },
         modifier = modifier
     ) {
@@ -209,7 +200,7 @@ internal fun PendingPauseBanner(startsInMs: Long, intention: String?, onCancel: 
         tone = BannerTone.PAUSE,
         glyph = { PausedGlyph() },
         title = "Rest of today starts in ${formatPauseRemaining(startsInMs)}",
-        body = if (intention.isNullOrBlank()) "Changed your mind? Cancel keeps tracking on." else "Enjoy: $intention",
+        body = if (intention.isNullOrBlank()) "Cancel to keep tracking." else intention,
         modifier = modifier
     ) {
         PauseAction("Cancel", onCancel, Modifier.semantics { contentDescription = "Cancel Rest of today" })
@@ -240,7 +231,7 @@ internal fun AppsCheckBanner(onOpen: () -> Unit, onDismiss: () -> Unit, modifier
                     .clickable(role = Role.Button, onClick = onOpen)
             ) {
                 Text(
-                    text = "Check which apps ReclaimLife helps with",
+                    text = "Check your apps",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f, fill = false)
                 )
