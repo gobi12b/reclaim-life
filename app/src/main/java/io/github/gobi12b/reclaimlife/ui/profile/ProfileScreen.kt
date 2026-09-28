@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,6 +24,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,9 +47,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import io.github.gobi12b.reclaimlife.ReclaimLifeApp
 import io.github.gobi12b.reclaimlife.data.Keepsake
 import io.github.gobi12b.reclaimlife.data.TreeState
-import io.github.gobi12b.reclaimlife.data.formatSaved
 import io.github.gobi12b.reclaimlife.data.treeNameTitle
 import io.github.gobi12b.reclaimlife.ui.common.rememberProgress
 import io.github.gobi12b.reclaimlife.ui.common.rememberReducedMotion
@@ -61,8 +63,7 @@ import io.github.gobi12b.reclaimlife.ui.theme.Radii
 import io.github.gobi12b.reclaimlife.ui.theme.reclaim
 import java.io.File
 import java.io.FileOutputStream
-import java.text.DateFormat
-import java.util.Date
+import java.text.NumberFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,17 +93,20 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
         Text("Profile", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
         val tree = progress?.tree ?: return@Column
         val savedMs = progress.sinceStartedMs.takeIf { progress.hasBaseline && it >= 60_000L }
+        val nickname by (context.applicationContext as ReclaimLifeApp).settingsRepository.nickname.collectAsState(initial = "")
 
-        // Recorded as it draws, so Share can save exactly what's on screen.
+        // Recorded as it draws, so Share saves exactly what's on screen. The rounded clip sits
+        // outside the recording: on screen it's a card, in the image it's full-bleed.
         Box(
             modifier = Modifier
                 .padding(top = 16.dp)
+                .clip(RoundedCornerShape(Radii.hero))
                 .drawWithContent {
                     card.record { this@drawWithContent.drawContent() }
                     drawLayer(card)
                 }
         ) {
-            ShareCard(tree, savedMs, reducedMotion)
+            ShareCard(tree, savedMs, nickname.trim(), reducedMotion)
         }
 
         Button(
@@ -128,76 +132,79 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
     }
 }
 
-/** The picture people share: the tree in its sky, its name, and a few honest numbers. */
+/**
+ * The picture people share, in a fixed 4:5 portrait so it posts cleanly. The tree fills the
+ * top; below it one story: a cheer, the minutes saved (or days grown before there's a
+ * baseline), and one quiet line of detail.
+ */
 @Composable
-private fun ShareCard(tree: TreeState, savedMs: Long?, reducedMotion: Boolean) {
+private fun ShareCard(tree: TreeState, savedMs: Long?, nickname: String, reducedMotion: Boolean) {
     val colors = MaterialTheme.reclaim
-    val planted = remember(tree.plantedAtMs) {
-        tree.plantedAtMs?.let { DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(it)) }
-    }
-    // A solid margin around the rounded card, so the saved image has no transparent corners.
-    Box(modifier = Modifier.background(MaterialTheme.colorScheme.surface).padding(4.dp)) {
+    val minutes = savedMs?.let { it / 60_000L }
+    val detail = buildList {
+        if (minutes != null) add(if (tree.grewDays == 1) "1 day grown" else "${tree.grewDays} days grown")
+        if (tree.streak > 0) add("${tree.streak}-day streak")
+        add(treeNameTitle(tree.name) + " the " + tree.stage.label.lowercase())
+    }.joinToString(" · ")
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(4f / 5f)
+            .background(Brush.verticalGradient(listOf(colors.heroTop, colors.heroBottom)))
+    ) {
+        Box(contentAlignment = Alignment.BottomCenter, modifier = Modifier.fillMaxWidth().weight(1f)) {
+            HeroBackdrop(Modifier.fillMaxSize(), resting = tree.todayRest != null, reducedMotion = true)
+            GrowthTree(
+                tree.stage,
+                tree.details,
+                resting = tree.todayRest != null,
+                reducedMotion = reducedMotion,
+                size = TreeSize.SHEET,
+                keepsakes = tree.keepsakes,
+                sprigs = tree.sprigs
+            )
+        }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(Radii.hero))
-                .background(Brush.verticalGradient(listOf(colors.heroTop, colors.heroBottom)))
+                .background(colors.heroGround)
+                .padding(horizontal = 24.dp, vertical = 20.dp)
         ) {
-            Box(contentAlignment = Alignment.BottomCenter, modifier = Modifier.fillMaxWidth().height(240.dp)) {
-                HeroBackdrop(Modifier.fillMaxSize(), resting = tree.todayRest != null, reducedMotion = true)
-                GrowthTree(
-                    tree.stage,
-                    tree.details,
-                    resting = tree.todayRest != null,
-                    reducedMotion = reducedMotion,
-                    size = TreeSize.SHEET,
-                    keepsakes = tree.keepsakes,
-                    sprigs = tree.sprigs
-                )
-            }
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colors.heroGround)
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
-            ) {
-                Text(
-                    treeNameTitle(tree.name),
-                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = DisplayFamily),
-                    color = colors.onHero
-                )
-                Text(
-                    tree.stage.label + (planted?.let { " · planted $it" } ?: ""),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onHeroMuted
-                )
-                Row(
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-                ) {
-                    CardStat(tree.grewDays.toString(), if (tree.grewDays == 1) "day grown" else "days grown")
-                    CardStat(tree.streak.toString(), "day streak")
-                    if (savedMs != null) CardStat(formatSaved(savedMs), "saved")
-                }
-                Text(
-                    "ReclaimLife",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.onHeroMuted,
-                    modifier = Modifier.padding(top = 14.dp)
-                )
-            }
+            Text(
+                if (nickname.isEmpty()) "You're awesome!" else "$nickname, you're awesome!",
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.onHeroMuted,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                if (minutes != null) NumberFormat.getIntegerInstance().format(minutes) + if (minutes == 1L) " minute" else " minutes"
+                else if (tree.grewDays == 1) "1 day" else "${tree.grewDays} days",
+                style = MaterialTheme.typography.displaySmall.copy(fontFamily = DisplayFamily),
+                color = colors.onHero,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            Text(
+                if (minutes != null) "saved from scrolling" else "of growing instead of scrolling",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onHero
+            )
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onHeroMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 14.dp)
+            )
+            Text(
+                "ReclaimLife",
+                style = MaterialTheme.typography.labelMedium.copy(fontFamily = DisplayFamily),
+                color = colors.onHeroMuted,
+                modifier = Modifier.padding(top = 10.dp)
+            )
         }
-    }
-}
-
-@Composable
-private fun CardStat(value: String, label: String) {
-    val colors = MaterialTheme.reclaim
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleLarge, color = colors.onHero)
-        Text(label, style = MaterialTheme.typography.labelMedium, color = colors.onHeroMuted)
     }
 }
 
