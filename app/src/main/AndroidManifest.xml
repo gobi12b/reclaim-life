@@ -13,6 +13,14 @@
          The app has no internet access, so it shouldn't list network permissions either. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
+    <!-- The app picker lists launchable apps so the user can choose which ones to watch. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".ReclaimLifeApp"
         android:allowBackup="true"

@@ -9,6 +9,7 @@ import io.github.gobi12b.reclaimlife.data.DEFAULT_HOURLY_REEL_LIMIT
 import io.github.gobi12b.reclaimlife.data.FlashcardDeck
 import io.github.gobi12b.reclaimlife.data.LimitMode
 import io.github.gobi12b.reclaimlife.data.ReplacementActivity
+import io.github.gobi12b.reclaimlife.data.TrackedApp
 import io.github.gobi12b.reclaimlife.data.PauseDuration
 import io.github.gobi12b.reclaimlife.widget.refreshReelWidget
 import kotlinx.coroutines.flow.SharingStarted
@@ -104,6 +105,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             app.settingsRepository.setLimitMode(mode)
             refreshReelWidget(app)
         }
+    }
+
+    fun updateTrackedApps(apps: List<TrackedApp>) {
+        viewModelScope.launch { app.settingsRepository.setTrackedApps(apps) }
     }
 
     fun updateSwap(activity: ReplacementActivity, deck: FlashcardDeck) {

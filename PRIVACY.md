@@ -16,27 +16,32 @@ the phone is Android's own backup, described below.
 ReclaimLife's reel counter is an Android Accessibility service. You turn it on yourself in
 Settings → Accessibility, after the app shows you what it does and you agree.
 
-- **What it receives:** the service is configured to get accessibility events only from
-  Instagram (`com.instagram.android`) and YouTube (`com.google.android.youtube`). It gets no
-  events from any other app.
+- **What it receives:** accessibility events only from the apps you choose to watch in
+  ReclaimLife — Instagram (`com.instagram.android`) and YouTube (`com.google.android.youtube`)
+  unless you change the list. It gets no events from any other app.
 - **What it looks at:** scroll events and the view IDs of on-screen layout elements inside
   those two apps. That is enough to tell whether the Reels / Shorts viewer is open and when you
-  swipe to the next reel. While you're in Instagram or YouTube, it also checks the name of the
-  app in front, so it can hide the badge when you leave and time how long you spent there.
+  swipe to the next reel (Instagram and YouTube only). While you're in a watched app, it also
+  checks the name of the app in front, so it can notice when you leave and time how long you
+  spent there.
 - **What it never reads or keeps:** your messages, what you type, passwords, or what's in the
   reels. No screen content is stored. The only result is a number: how many reels you've
   watched today.
 - **What it does with this:** counts reels, shows the counter badge over the Reels / Shorts
-  viewer, shows a short pause screen when you open Instagram or YouTube, and opens ReclaimLife's
-  block screen once you reach your limit. Nothing else.
+  viewer, shows a short pause screen when you open a watched app, and opens ReclaimLife's
+  block screen once you reach your reel limit. Nothing else.
+
+## Installed apps list
+
+To let you choose which apps to watch, ReclaimLife lists the apps on your phone that have a
+launcher icon. The list is only shown in that picker; only the apps you choose are saved.
 
 ## Usage access (optional)
 
-The pause screen shown when you open Instagram or YouTube shows how long you've spent in that
-app over the last 24 hours. If you allow Usage access (Settings → Usage access), ReclaimLife reads
-Android's own record of when those two apps were in front, so the figure covers the full 24
-hours. It only looks up Instagram and YouTube, keeps nothing from that record, and works it out
-fresh each time. Without Usage access it uses its own timing instead (below). You can turn it off
+The pause screen, Home and Insights show how long you've spent in your watched apps (the last 24
+hours, and the last week). If you allow Usage access (Settings → Usage access), ReclaimLife reads
+Android's own record of when those apps were in front, so the figures are complete. It only looks
+up the apps you chose, keeps nothing from that record, and works it out fresh each time. Without Usage access it uses its own timing instead (below). You can turn it off
 at any time in the same setting.
 
 ## Microphone (pause tracking)
@@ -64,8 +69,9 @@ ReclaimLife stores the following in its private app storage:
   ends;
 - today's reel count, extra reels granted and requested today, and a per-day history of whether
   you stayed within your limit (plus totals of those days);
-- when Instagram and YouTube were in front over the last 24 hours (start and end times only),
-  which is deleted as it passes 24 hours old.
+- which apps you chose to watch;
+- when those apps were in front (start and end times only), deleted after about a week;
+- whether you chose Skip or Continue on the pause screen, and when, deleted after about a week.
 
 The home-screen widget shows the same count and limit. Uninstalling the app, or clearing its
 storage in Settings → Apps → ReclaimLife, deletes all of it.

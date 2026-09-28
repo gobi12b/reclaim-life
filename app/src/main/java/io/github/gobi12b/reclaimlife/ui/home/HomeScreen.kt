@@ -88,16 +88,22 @@ import io.github.gobi12b.reclaimlife.ui.common.SproutBadge
 import io.github.gobi12b.reclaimlife.ui.common.SwapPicker
 import io.github.gobi12b.reclaimlife.ui.replacement.SwapSession
 import io.github.gobi12b.reclaimlife.ui.common.rememberAccessibilityStatus
+import io.github.gobi12b.reclaimlife.ui.common.rememberHasUsageAccess
+import io.github.gobi12b.reclaimlife.ui.common.rememberUsage
+import io.github.gobi12b.reclaimlife.ui.common.rememberTrackedApps
+import io.github.gobi12b.reclaimlife.ui.common.AppPickerSheet
+import io.github.gobi12b.reclaimlife.data.TrackedApp
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.delay
 
 /**
- * Top-anchored dashboard: alerts first (they're the states that matter most), then today's
- * count, the limit, and the trend — with the deliberate low-emphasis "Pause tracking" last.
+ * Top-anchored dashboard: a greeting with Pause, alerts (the states that matter most), then the
+ * one number to act on, screen time, the week — and, set apart below, everything you configured.
  */
 @Composable
 fun HomeScreen(
+    modifier: Modifier = Modifier,
     dailyLimit: Int,
     hourlyLimit: Int,
     limitMode: LimitMode,
@@ -115,6 +121,7 @@ fun HomeScreen(
     onHourlyLimitChange: (Int) -> Unit,
     onLimitModeChange: (LimitMode) -> Unit,
     onSwapChange: (ReplacementActivity, FlashcardDeck) -> Unit,
+    onTrackedAppsChange: (List<TrackedApp>) -> Unit,
     onPause: (PauseDuration) -> Unit,
     onResume: () -> Unit
 ) {
@@ -125,6 +132,10 @@ fun HomeScreen(
     var tryingSwap by remember { mutableStateOf(false) }
     var showPauseConfirmDialog by remember { mutableStateOf(false) }
     val accessibilityStatus = rememberAccessibilityStatus()
+    val trackedApps = rememberTrackedApps()
+    val usage = rememberUsage(days = 1, packages = remember(trackedApps) { trackedApps.map { it.packageName }.toSet() })
+    var showAppsSheet by remember { mutableStateOf(false) }
+    val hasUsageAccess = rememberHasUsageAccess()
 
     // Ticks once a second only while paused, so the countdown moves and the screen flips back to
     // normal on its own when the pause runs out — nothing has to write "resumed" to storage.
@@ -149,7 +160,7 @@ fun HomeScreen(
     val thisHour = reelsInWindow(recentReelTimes, hourlyNowMs).size
     val hourlyUnblockAtMs = if (limitMode.usesHourly) hourlyUnblockAt(recentReelTimes, hourlyLimit, hourlyNowMs) else null
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -158,7 +169,7 @@ fun HomeScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            CompactBrandMark(modifier = Modifier.padding(bottom = 4.dp))
+            HomeHeader(name = name, nowMs = nowMs, showPause = !isPaused, onPause = { showPauseConfirmDialog = true })
 
             if (accessibilityStatus != AccessibilityStatus.ON) {
                 AccessibilityBanner(status = accessibilityStatus)
@@ -172,76 +183,84 @@ fun HomeScreen(
                 )
             }
 
-            // Still visible while paused so progress isn't hidden — just dimmed to read as "on hold".
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.alpha(if (isPaused) 0.45f else 1f)
-            ) {
-                if (limitMode.usesDaily) {
-                    TodayCard(
-                        todayCount = todayCount,
-                        dailyLimit = dailyLimit,
-                        extraAllowance = extraAllowance,
-                        name = name
-                    )
-                } else {
-                    HourlyTodayCard(
-                        thisHour = thisHour,
-                        hourlyLimit = hourlyLimit,
-                        unblockInMs = hourlyUnblockAtMs?.let { it - hourlyNowMs },
-                        todayCount = todayCount,
-                        name = name
-                    )
-                }
-                LimitModeCard(
-                    limitMode = limitMode,
-                    isPaused = isPaused,
-                    onChange = onLimitModeChange
+            // Remaining leads — "7 left" is the number you act on; used/limit sits beside it.
+            if (limitMode.usesDaily) {
+                val effectiveLimit = dailyLimit + extraAllowance
+                val reached = todayCount >= effectiveLimit
+                HeroCard(
+                    title = "Today",
+                    used = todayCount,
+                    limit = effectiveLimit,
+                    headline = if (reached) "Limit reached" else "${effectiveLimit - todayCount} left",
+                    detail = "$todayCount of $effectiveLimit reels today",
+                    message = when {
+                        reached && name.isNotEmpty() -> "That's today's reels, $name. The rest of the day is yours."
+                        reached -> "That's today's reels. The rest of the day is yours."
+                        name.isNotEmpty() -> "Every reel you skip is a little time back for you, $name."
+                        else -> "Every reel you skip is a little time back for you."
+                    },
+                    extraNote = if (extraAllowance > 0) "$dailyLimit limit + $extraAllowance extra today" else null,
+                    isPaused = isPaused
                 )
-                if (limitMode.usesDaily) {
-                    LimitCard(
-                        dailyLimit = dailyLimit,
-                        onEdit = { showEditSheet = true },
-                        onLowerToCap = { onLimitChange(MAX_DAILY_REEL_LIMIT) }
-                    )
-                }
-                if (limitMode.usesHourly) {
-                    HourlyLimitCard(
-                        hourlyLimit = hourlyLimit,
-                        thisHour = thisHour,
-                        unblockInMs = hourlyUnblockAtMs?.let { it - hourlyNowMs },
-                        onEdit = { showHourlySheet = true }
-                    )
-                }
-                SwapCard(
-                    activity = swapActivity,
-                    deck = flashcardDeck,
-                    onChange = { showSwapSheet = true },
-                    onTry = { tryingSwap = true }
+            } else {
+                val unblockInMs = hourlyUnblockAtMs?.let { it - hourlyNowMs }
+                HeroCard(
+                    title = "This hour",
+                    used = thisHour,
+                    limit = hourlyLimit,
+                    headline = if (unblockInMs != null) "Back in ${formatPauseRemaining(unblockInMs)}" else "${(hourlyLimit - thisHour).coerceAtLeast(0)} left",
+                    detail = "$thisHour of $hourlyLimit in the last 60 min · $todayCount today",
+                    message = when {
+                        unblockInMs != null -> "Reels are taking a short break. They're back soon, or right after a 2-minute break."
+                        name.isNotEmpty() -> "Every reel you skip is a little time back for you, $name."
+                        else -> "Every reel you skip is a little time back for you."
+                    },
+                    extraNote = null,
+                    isPaused = isPaused
                 )
-                HistoryCard(
-                    hourlyOnly = !limitMode.usesDaily,
-                    dayHistory = dayHistory,
-                    daysWithinLimit = daysWithinLimit,
-                    daysExceededLimit = daysExceededLimit,
-                    todayMs = nowMs
+            }
+            // In Both mode the hourly window is the other live number — say where it stands.
+            if (limitMode == LimitMode.BOTH) {
+                val unblockInMs = hourlyUnblockAtMs?.let { it - hourlyNowMs }
+                Text(
+                    text = if (unblockInMs != null) {
+                        "Hourly limit reached · back in ${formatPauseRemaining(unblockInMs)}, or after a 2-minute break"
+                    } else {
+                        "This hour: $thisHour of $hourlyLimit reels"
+                    },
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp)
                 )
             }
 
-            UsageAccessCard()
+            ScreenTimeCard(usage = usage, tracked = trackedApps, hasUsageAccess = hasUsageAccess)
 
-            if (!isPaused) {
-                TextButton(
-                    onClick = { showPauseConfirmDialog = true },
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                ) {
-                    Text(
-                        "Pause tracking",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            WeekCard(
+                hourlyOnly = !limitMode.usesDaily,
+                dayHistory = dayHistory,
+                daysWithinLimit = daysWithinLimit,
+                daysExceededLimit = daysExceededLimit,
+                todayMs = nowMs
+            )
+
+            SectionLabel("Your setup")
+            SetupCard(
+                limitMode = limitMode,
+                isPaused = isPaused,
+                dailyLimit = dailyLimit,
+                hourlyLimit = hourlyLimit,
+                swapActivity = swapActivity,
+                flashcardDeck = flashcardDeck,
+                tracked = trackedApps,
+                onEditApps = { showAppsSheet = true },
+                onLimitModeChange = onLimitModeChange,
+                onEditDaily = { showEditSheet = true },
+                onLowerDailyToCap = { onLimitChange(MAX_DAILY_REEL_LIMIT) },
+                onEditHourly = { showHourlySheet = true },
+                onChangeSwap = { showSwapSheet = true },
+                onTrySwap = { tryingSwap = true }
+            )
             PrivacyPolicyLink(modifier = Modifier.align(Alignment.CenterHorizontally))
         }
 
@@ -266,6 +285,17 @@ fun HomeScreen(
                 onSave = {
                     onHourlyLimitChange(it)
                     showHourlySheet = false
+                }
+            )
+        }
+
+        if (showAppsSheet) {
+            AppPickerSheet(
+                current = trackedApps,
+                onDismiss = { showAppsSheet = false },
+                onSave = {
+                    onTrackedAppsChange(it)
+                    showAppsSheet = false
                 }
             )
         }
@@ -310,45 +340,6 @@ fun HomeScreen(
                     showPauseConfirmDialog = false
                 }
             )
-        }
-    }
-}
-
-/**
- * Optional, so it sits low on the page in neutral colours: without Usage access the gate's
- * "last 24 hours" only covers time ReclaimLife itself measured. Hidden once it's allowed.
- */
-@Composable
-private fun UsageAccessCard() {
-    val context = LocalContext.current
-    var granted by remember { mutableStateOf(hasUsageAccess(context)) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) granted = hasUsageAccess(context)
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    if (granted) return
-
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("See your full screen time", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(
-                text = "When you open Instagram or YouTube, ReclaimLife shows how long you've spent there " +
-                    "in the last 24 hours. Usage access lets it read that from Android, including time " +
-                    "before ReclaimLife was installed. It stays on your phone.",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp, bottom = 12.dp)
-            )
-            OutlinedButton(
-                onClick = { runCatching { context.startActivity(usageAccessSettingsIntent()) } },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Allow Usage access")
-            }
         }
     }
 }
@@ -436,418 +427,6 @@ private fun AlertGlyph() {
         contentAlignment = Alignment.Center
     ) {
         Text("!", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onError)
-    }
-}
-
-@Composable
-private fun PausedBanner(remainingMs: Long, resumesAtMs: Long, onResume: () -> Unit) {
-    val resumesAt = remember(resumesAtMs) { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(resumesAtMs)) }
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SproutBadge(size = 28.dp, modifier = Modifier.alpha(0.6f))
-                Column(modifier = Modifier.padding(start = 12.dp)) {
-                    Text(
-                        text = "Tracking paused · ${formatPauseRemaining(remainingMs)} left",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.semantics { heading() }
-                    )
-                    Text(
-                        text = "Reels aren't counted or blocked. It turns back on by itself at $resumesAt.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Button(
-                onClick = onResume,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp)
-            ) {
-                Text("Resume now")
-            }
-        }
-    }
-}
-
-@Composable
-private fun TodayCard(todayCount: Int, dailyLimit: Int, extraAllowance: Int, name: String) {
-    val effectiveLimit = dailyLimit + extraAllowance
-    val reachedLimit = todayCount >= effectiveLimit
-    val remaining = (effectiveLimit - todayCount).coerceAtLeast(0)
-    val mood = remember(todayCount, effectiveLimit) { Mood.forProgress(todayCount, effectiveLimit) }
-
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = mood.emoji,
-                fontSize = 40.sp,
-                modifier = Modifier.clearAndSetSemantics { contentDescription = "Mood: ${mood.label}" }
-            )
-            Text(
-                text = "Today · ${mood.label}",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            // Remaining leads — "86 left" is the number you act on; used/total sits under it.
-            Text(
-                text = if (reachedLimit) "Limit reached" else "$remaining left today",
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            Text(
-                text = "$todayCount / $effectiveLimit reels watched",
-                fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            LinearProgressIndicator(
-                progress = { (todayCount.toFloat() / effectiveLimit.toFloat()).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth()
-            )
-            // The extra allowance is spelled out wherever the total appears, so "190" next to a
-            // "186" limit reads as "186 + 4 you asked for", not as a bug.
-            if (extraAllowance > 0) {
-                Text(
-                    text = "$dailyLimit limit + $extraAllowance extra today",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSecondary,
-                    modifier = Modifier
-                        .padding(top = 10.dp)
-                        .background(MaterialTheme.colorScheme.secondary, RoundedCornerShape(50))
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                )
-            }
-            Text(
-                text = when {
-                    reachedLimit && name.isNotEmpty() -> "That's today's reels, $name. The rest of the day is yours."
-                    reachedLimit -> "That's today's reels. The rest of the day is yours."
-                    name.isNotEmpty() -> "Every reel you skip is a little time back for you, $name."
-                    else -> "Every reel you skip is a little time back for you."
-                },
-                fontSize = 14.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun LimitCard(dailyLimit: Int, onEdit: () -> Unit, onLowerToCap: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Daily limit", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("$dailyLimit reels", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                }
-                TextButton(onClick = onEdit) { Text("Edit") }
-            }
-            // Limits saved above the cap (from the old 1–1000 slider) are kept, never forced
-            // down — just a gentle, one-tap nudge toward the range the picker now offers.
-            if (dailyLimit > MAX_DAILY_REEL_LIMIT) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    Text(
-                        text = "Most people start at $MAX_DAILY_REEL_LIMIT or under. Ready to come down?",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = onLowerToCap) { Text("Lower to $MAX_DAILY_REEL_LIMIT") }
-                }
-            }
-        }
-    }
-}
-
-/** Hourly-only mode's version of [TodayCard]: this hour leads, today's total is just context. */
-@Composable
-private fun HourlyTodayCard(thisHour: Int, hourlyLimit: Int, unblockInMs: Long?, todayCount: Int, name: String) {
-    val reachedLimit = unblockInMs != null
-    val remaining = (hourlyLimit - thisHour).coerceAtLeast(0)
-    val mood = remember(thisHour, hourlyLimit) { Mood.forProgress(thisHour, hourlyLimit) }
-
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = mood.emoji,
-                fontSize = 40.sp,
-                modifier = Modifier.clearAndSetSemantics { contentDescription = "Mood: ${mood.label}" }
-            )
-            Text(
-                text = "This hour · ${mood.label}",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = if (unblockInMs != null) "Back in ${formatPauseRemaining(unblockInMs)}" else "$remaining left this hour",
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            Text(
-                text = "$thisHour / $hourlyLimit in the last 60 min · $todayCount today",
-                fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            LinearProgressIndicator(
-                progress = { (thisHour.toFloat() / hourlyLimit.toFloat()).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text(
-                text = when {
-                    reachedLimit && name.isNotEmpty() -> "Reels are taking a short break, $name. They'll be back soon, or right after a 2-minute break."
-                    reachedLimit -> "Reels are taking a short break. They'll be back soon, or right after a 2-minute break."
-                    name.isNotEmpty() -> "Every reel you skip is a little time back for you, $name."
-                    else -> "Every reel you skip is a little time back for you."
-                },
-                fontSize = 14.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp)
-            )
-        }
-    }
-}
-
-/**
- * Daily / Hourly / Both. Dropping a limit that's enforced now is a loosening, so it gets the same
- * treatment as raising one: confirmed, and not available while paused.
- */
-@Composable
-private fun LimitModeCard(limitMode: LimitMode, isPaused: Boolean, onChange: (LimitMode) -> Unit) {
-    var confirmMode by remember { mutableStateOf<LimitMode?>(null) }
-
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
-            Text("Limit by", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                LimitMode.entries.forEach { mode ->
-                    val loosens = limitMode.loosensTo(mode)
-                    FilterChip(
-                        selected = mode == limitMode,
-                        onClick = {
-                            when {
-                                mode == limitMode -> Unit
-                                loosens -> confirmMode = mode
-                                else -> onChange(mode)
-                            }
-                        },
-                        enabled = mode == limitMode || !(isPaused && loosens),
-                        label = { Text(mode.label) }
-                    )
-                }
-            }
-            Text(
-                text = when (limitMode) {
-                    LimitMode.DAILY -> "One cap for the whole day."
-                    LimitMode.HOURLY -> "A 2-minute break whenever an hour's reels run out; no daily cap."
-                    LimitMode.BOTH -> "A daily cap, plus a 2-minute break whenever an hour's reels run out."
-                } + if (isPaused && limitMode != LimitMode.BOTH) " While paused you can only add a limit." else "",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-    }
-
-    confirmMode?.let { target ->
-        val dropped = if (limitMode.usesDaily && !target.usesDaily) "daily" else "hourly"
-        AlertDialog(
-            onDismissRequest = { confirmMode = null },
-            title = { Text("Drop the $dropped limit?") },
-            text = {
-                Text(
-                    if (dropped == "daily") {
-                        "Without a daily limit, the hours can quietly add up. You can switch back anytime."
-                    } else {
-                        "The hourly limit helps keep one sitting from running long. You can switch back anytime."
-                    }
-                )
-            },
-            confirmButton = {
-                Button(onClick = { confirmMode = null }) { Text("Keep ${limitMode.label.lowercase()}") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    confirmMode = null
-                    onChange(target)
-                }) {
-                    Text("Switch")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun HourlyLimitCard(hourlyLimit: Int, thisHour: Int, unblockInMs: Long?, onEdit: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Hourly limit", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("$hourlyLimit reels / hour", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    text = if (unblockInMs != null) {
-                        "Reached · back in ${formatPauseRemaining(unblockInMs)}, or after a 2-minute break"
-                    } else {
-                        "$thisHour / $hourlyLimit in the last 60 minutes"
-                    },
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-            TextButton(onClick = onEdit) { Text("Edit") }
-        }
-    }
-}
-
-@Composable
-private fun HistoryCard(
-    hourlyOnly: Boolean,
-    dayHistory: Map<String, DayOutcome>,
-    daysWithinLimit: Int,
-    daysExceededLimit: Int,
-    todayMs: Long
-) {
-    // Keyed per hour, not per ms tick, so the pause countdown doesn't recompute this every second
-    // but the strip still rolls over to a new day within the hour after midnight.
-    val hourKey = todayMs / (60 * 60 * 1000L)
-    val cells = remember(dayHistory, hourKey) { lastDays(dayHistory, todayMs) }
-    val streak = remember(dayHistory, hourKey) { currentStreak(dayHistory, todayMs) }
-
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = "Last 7 days",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = when (streak) {
-                        0 -> "No streak yet"
-                        1 -> "1-day streak"
-                        else -> "$streak-day streak"
-                    },
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (streak > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp)
-            ) {
-                cells.forEach { cell ->
-                    val description = when {
-                        cell.isToday -> "Today, in progress"
-                        cell.outcome == DayOutcome.WITHIN -> "${cell.dateKey}, within limit"
-                        cell.outcome == DayOutcome.OVER -> "${cell.dateKey}, over limit"
-                        else -> "${cell.dateKey}, no data"
-                    }
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clearAndSetSemantics { contentDescription = description }
-                    ) {
-                        DayDot(outcome = cell.outcome, isToday = cell.isToday)
-                        Text(
-                            text = cell.weekdayInitial,
-                            fontSize = 11.sp,
-                            fontWeight = if (cell.isToday) FontWeight.Bold else FontWeight.Normal,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-            }
-            if (hourlyOnly) {
-                Text(
-                    text = "Hourly mode: a day counts as within if $HOURLY_BREAKS_WITHIN_LIMIT or fewer breaks reopened reels.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            }
-            if (daysWithinLimit > 0 || daysExceededLimit > 0) {
-                Text(
-                    text = "All time: $daysWithinLimit " + (if (daysWithinLimit == 1) "day" else "days") +
-                        " within limit · $daysExceededLimit over",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            } else {
-                Text(
-                    text = "Today closes out at midnight — your first dot fills in tomorrow.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DayDot(outcome: DayOutcome?, isToday: Boolean) {
-    val size = 18.dp
-    when {
-        isToday -> Box(
-            Modifier
-                .size(size)
-                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-        )
-        outcome == DayOutcome.WITHIN -> Box(
-            Modifier
-                .size(size)
-                .background(MaterialTheme.colorScheme.primary, CircleShape)
-        )
-        outcome == DayOutcome.OVER -> Box(
-            Modifier
-                .size(size)
-                .background(MaterialTheme.colorScheme.error, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            // Shape cue as well as color, for anyone who can't tell green from red.
-            Text("×", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onError)
-        }
-        // No record (counter wasn't running): neutral grey, smaller, so it reads as "unknown"
-        // rather than a result — it's skipped by the streak, not counted against it.
-        else -> Box(Modifier.size(size), contentAlignment = Alignment.Center) {
-            Box(
-                Modifier
-                    .size(10.dp)
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f), CircleShape)
-            )
-        }
     }
 }
 
@@ -977,8 +556,8 @@ private fun EditHourlyLimitSheet(
         ) {
             Text("Hourly limit", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
-                text = "Counts reels in any rolling 60 minutes. Hit it and reels are blocked " +
-                    "until the oldest ones age out.",
+                text = "Counts reels in any rolling 60 minutes. Hit it and reels pause until the " +
+                    "hour frees up — or right away after a 2-minute break.",
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1040,32 +619,6 @@ private fun EditHourlyLimitSheet(
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun SwapCard(activity: ReplacementActivity, deck: FlashcardDeck, onChange: () -> Unit, onTry: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Your 2-minute swap",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text("${activity.emoji} ${activity.label}", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        text = if (activity == ReplacementActivity.FLASHCARDS) "Deck: ${deck.label}" else activity.blurb,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                }
-                TextButton(onClick = onChange) { Text("Change") }
-            }
-            TextButton(onClick = onTry) { Text("Try it now") }
-        }
     }
 }
 

@@ -46,9 +46,9 @@ fun PrivacyPolicyLink(modifier: Modifier = Modifier) {
 /**
  * Prominent disclosure for the Accessibility API, shown before *every* path to the Accessibility
  * settings (onboarding, and the Home banner via [AccessibilityConsentDialog]). Every claim here
- * must stay true of the code: the service config limits events to Instagram/YouTube, the only
- * thing read outside them is which app is in front while the badge shows, nothing but counts is
- * stored, and the app has no INTERNET permission at all.
+ * must stay true of the code: the service only gets events from the apps the user chose
+ * (Instagram and YouTube by default), the only thing read outside them is which app is in front,
+ * nothing but counts and times is stored, and the app has no INTERNET permission at all.
  */
 @Composable
 fun AccessibilityDisclosure(modifier: Modifier = Modifier) {
@@ -56,15 +56,16 @@ fun AccessibilityDisclosure(modifier: Modifier = Modifier) {
         Column(modifier = Modifier.padding(16.dp)) {
             DisclosureItem(
                 title = "What it reads",
-                body = "Scrolling and screen layout inside Instagram and YouTube only — enough to " +
-                    "tell a reel swipe from normal browsing. It gets no events from other apps; " +
-                    "while the counter is showing, it only checks which app is in front, to hide " +
-                    "the counter when you leave."
+                body = "Only the apps you choose to watch — Instagram and YouTube to start. In those " +
+                    "it notices when you open them, to show a moment to pause, and in Instagram and " +
+                    "YouTube it reads scrolling and screen layout, enough to tell a reel swipe from " +
+                    "normal browsing. It gets no events from other apps; it only checks which app " +
+                    "is in front, to notice when you leave."
             )
             DisclosureItem(
                 title = "What it never reads",
                 body = "Your messages, what you type, passwords, or what's in the reels. " +
-                    "No screen content is saved — only your reel counts."
+                    "No screen content is saved — only your reel counts and time in each app."
             )
             DisclosureItem(
                 title = "Where it goes",

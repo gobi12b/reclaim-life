@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sprout mark: a soft sun rising behind a two-tone sprout on a hill. Same geometry as SunriseLogo in BrandMark.kt. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#EBFFF3C4"
+        android:pathData="M37,52a17,17 0,1 0,34 0a17,17 0,1 0,-34 0z" />
+    <path
+        android:fillColor="#FF2F7D3F"
+        android:pathData="M6,81Q54,62 102,81L102,108L6,108Z" />
+    <path
+        android:fillColor="#FF2F7D3F"
+        android:pathData="M51.8,57.2a2.2,2.2 0,0 1,4.4 0V80H51.8Z" />
+    <path
+        android:fillColor="#FF3FA65A"
+        android:pathData="M54,57C47,42 36,40 31,44C33,54 43,60 54,57Z" />
+    <path
+        android:fillColor="#FF9BDB5E"
+        android:pathData="M54,57C61,42 72,40 77,44C75,54 65,60 54,57Z" />
+</vector>

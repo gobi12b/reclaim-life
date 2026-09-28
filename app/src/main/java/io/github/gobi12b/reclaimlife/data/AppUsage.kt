@@ -7,6 +7,9 @@ package io.github.gobi12b.reclaimlife.data
  */
 const val USAGE_WINDOW_MS = 24 * 60 * 60_000L
 
+/** How long ReclaimLife's own spans are kept — a week plus a day, for the Insights charts. */
+const val USAGE_RETENTION_MS = 8 * USAGE_WINDOW_MS
+
 /** Spans this close together are stored as one, which keeps the stored string short. */
 private const val USAGE_MERGE_GAP_MS = 2_000L
 
@@ -20,10 +23,10 @@ fun usageMsInWindow(spans: List<UsageSpan>, packageName: String, nowMs: Long): L
     }
 }
 
-/** Adds [span] (merging it into the last one when they touch) and drops spans older than the window. */
+/** Adds [span] (merging it into the last one when they touch) and drops spans past [USAGE_RETENTION_MS]. */
 fun addUsageSpan(spans: List<UsageSpan>, span: UsageSpan, nowMs: Long): List<UsageSpan> {
     if (span.endMs <= span.startMs) return spans
-    val kept = spans.filter { it.endMs > nowMs - USAGE_WINDOW_MS }
+    val kept = spans.filter { it.endMs > nowMs - USAGE_RETENTION_MS }
     val last = kept.lastOrNull()
     return if (last != null && last.packageName == span.packageName && span.startMs - last.endMs <= USAGE_MERGE_GAP_MS) {
         kept.dropLast(1) + last.copy(endMs = maxOf(last.endMs, span.endMs))
@@ -72,12 +75,17 @@ data class ForegroundEvent(val timeMs: Long, val resumed: Boolean)
  * time order. Events may start before the window, so a stretch already running at its start is
  * clipped rather than lost; one still running at the end counts up to [nowMs].
  */
-fun foregroundMsFromEvents(events: List<ForegroundEvent>, windowStartMs: Long, nowMs: Long): Long {
-    var total = 0L
+fun foregroundMsFromEvents(events: List<ForegroundEvent>, windowStartMs: Long, nowMs: Long): Long =
+    foregroundStretches(events, windowStartMs, nowMs).sumOf { it.last - it.first }
+
+/** The stretches (start..end, epoch millis) an app was in front, clipped to [windowStartMs]..[nowMs]. */
+fun foregroundStretches(events: List<ForegroundEvent>, windowStartMs: Long, nowMs: Long): List<LongRange> {
+    val stretches = mutableListOf<LongRange>()
     var since: Long? = null
     fun close(endMs: Long) {
-        val start = since ?: return
-        total += (minOf(endMs, nowMs) - maxOf(start, windowStartMs)).coerceAtLeast(0L)
+        val start = maxOf(since ?: return, windowStartMs)
+        val end = minOf(endMs, nowMs)
+        if (end > start) stretches += start..end
         since = null
     }
     for (event in events.sortedBy { it.timeMs }) {
@@ -88,5 +96,5 @@ fun foregroundMsFromEvents(events: List<ForegroundEvent>, windowStartMs: Long, n
         }
     }
     close(nowMs)
-    return total
+    return stretches
 }

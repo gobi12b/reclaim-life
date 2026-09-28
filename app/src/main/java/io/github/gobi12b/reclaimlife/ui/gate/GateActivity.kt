@@ -82,9 +82,11 @@ import io.github.gobi12b.reclaimlife.data.TargetApps
 import io.github.gobi12b.reclaimlife.data.formatUsage
 import io.github.gobi12b.reclaimlife.data.usageMsInWindow
 import io.github.gobi12b.reclaimlife.ui.common.OwnScreens
+import io.github.gobi12b.reclaimlife.ui.common.appLabel
 import io.github.gobi12b.reclaimlife.ui.common.SproutBadge
 import io.github.gobi12b.reclaimlife.ui.theme.ReclaimLifeTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * A short pause shown by [io.github.gobi12b.reclaimlife.service.ReelBlockerAccessibilityService]
@@ -117,11 +119,12 @@ class GateActivity : ComponentActivity() {
                 }
                 BackHandler { skip() }
                 GateContent(
-                    appLabel = TargetApps.labelFor(targetPackage),
+                    appLabel = targetPackage?.let { appLabel(this@GateActivity, it) } ?: "this app",
                     usage = usage,
                     onSkip = { skip() },
                     onContinue = {
                         OwnScreens.recordGateDecision(targetPackage)
+                        recordForInsights(skipped = false)
                         finish()
                     }
                 )
@@ -142,8 +145,15 @@ class GateActivity : ComponentActivity() {
         if (!isChangingConfigurations) finish()
     }
 
+    /** Kept for the Insights page; runs on the app-wide scope so finishing doesn't cancel it. */
+    private fun recordForInsights(skipped: Boolean) {
+        val app = application as ReclaimLifeApp
+        app.appScope.launch { app.reelUsageRepository.recordGateDecision(skipped) }
+    }
+
     private fun skip() {
         OwnScreens.recordGateDecision(targetPackage)
+        recordForInsights(skipped = true)
         startActivity(Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

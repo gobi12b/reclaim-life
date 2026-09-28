@@ -34,7 +34,7 @@ class AppUsageTest {
 
     @Test
     fun addingDropsSpansOlderThanTheWindowAndEmptySpans() {
-        val old = listOf(UsageSpan(ig, minutesAgo(26 * 60), minutesAgo(25 * 60)))
+        val old = listOf(UsageSpan(ig, now - USAGE_RETENTION_MS - 60 * 60_000L, now - USAGE_RETENTION_MS - 1))
         assertEquals(
             listOf(UsageSpan(yt, minutesAgo(5), minutesAgo(1))),
             addUsageSpan(old, UsageSpan(yt, minutesAgo(5), minutesAgo(1)), now)

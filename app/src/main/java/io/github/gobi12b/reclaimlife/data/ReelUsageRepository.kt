@@ -34,6 +34,8 @@ class ReelUsageRepository(private val context: Context) {
         val HOURLY_BREAKS = intPreferencesKey("hourly_breaks")
         /** Time each target app was in front over the last 24 hours — see [UsageSpan]. */
         val APP_USAGE_SPANS = stringPreferencesKey("app_usage_spans")
+        /** Skip/continue choices on the open-pause screen, for Insights. */
+        val GATE_DECISIONS = stringPreferencesKey("gate_decisions")
     }
 
     /** Lifetime count of past days that ended at or under that day's limit. */
@@ -99,7 +101,7 @@ class ReelUsageRepository(private val context: Context) {
     val recentReelTimes: Flow<List<Long>> =
         context.usageDataStore.data.map { parseReelTimes(it[Keys.RECENT_REEL_TIMES]) }
 
-    /** Spans of time Instagram/YouTube were in front, trimmed to roughly the last 24 hours. */
+    /** Spans of time Instagram/YouTube were in front, kept for about a week (see [USAGE_RETENTION_MS]). */
     val appUsageSpans: Flow<List<UsageSpan>> =
         context.usageDataStore.data.map { parseUsageSpans(it[Keys.APP_USAGE_SPANS]) }
 
@@ -112,6 +114,18 @@ class ReelUsageRepository(private val context: Context) {
                 System.currentTimeMillis()
             )
             prefs[Keys.APP_USAGE_SPANS] = serializeUsageSpans(spans)
+        }
+    }
+
+    /** Skip/continue choices on the open-pause screen over roughly the last week. */
+    val gateDecisions: Flow<List<GateDecision>> =
+        context.usageDataStore.data.map { parseGateDecisions(it[Keys.GATE_DECISIONS]) }
+
+    suspend fun recordGateDecision(skipped: Boolean) {
+        context.usageDataStore.edit { prefs ->
+            val now = System.currentTimeMillis()
+            val kept = parseGateDecisions(prefs[Keys.GATE_DECISIONS]).filter { it.timeMs > now - GATE_DECISION_RETENTION_MS }
+            prefs[Keys.GATE_DECISIONS] = serializeGateDecisions(kept + GateDecision(now, skipped))
         }
     }
 

@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.gobi12b.reclaimlife.ui.MainTabs
 import io.github.gobi12b.reclaimlife.ui.home.HomeScreen
 import io.github.gobi12b.reclaimlife.ui.onboarding.OnboardingFlow
 import io.github.gobi12b.reclaimlife.ui.theme.ReclaimLifeTheme
@@ -57,26 +58,30 @@ private fun AppContent(viewModel: MainViewModel) {
         false -> OnboardingFlow(onComplete = { mode, limit, hourlyLimit, name, activity, deck ->
             viewModel.completeOnboarding(mode, limit, hourlyLimit, name, activity, deck)
         })
-        true -> HomeScreen(
-            dailyLimit = dailyLimit,
-            hourlyLimit = hourlyLimit,
-            limitMode = limitMode,
-            recentReelTimes = recentReelTimes,
-            todayCount = todayCount,
-            extraAllowance = extraAllowance,
-            nickname = nickname,
-            swapActivity = swapActivity,
-            flashcardDeck = flashcardDeck,
-            daysWithinLimit = daysWithinLimit,
-            daysExceededLimit = daysExceededLimit,
-            pausedUntilMs = pausedUntilMs,
-            dayHistory = dayHistory,
-            onLimitChange = { viewModel.updateDailyLimit(it) },
-            onHourlyLimitChange = { viewModel.updateHourlyLimit(it) },
-            onLimitModeChange = { viewModel.updateLimitMode(it) },
-            onSwapChange = { activity, deck -> viewModel.updateSwap(activity, deck) },
-            onPause = { viewModel.pauseTracking(it) },
-            onResume = { viewModel.resumeTracking() }
-        )
+        true -> MainTabs { modifier ->
+            HomeScreen(
+                modifier = modifier,
+                dailyLimit = dailyLimit,
+                hourlyLimit = hourlyLimit,
+                limitMode = limitMode,
+                recentReelTimes = recentReelTimes,
+                todayCount = todayCount,
+                extraAllowance = extraAllowance,
+                nickname = nickname,
+                swapActivity = swapActivity,
+                flashcardDeck = flashcardDeck,
+                daysWithinLimit = daysWithinLimit,
+                daysExceededLimit = daysExceededLimit,
+                pausedUntilMs = pausedUntilMs,
+                dayHistory = dayHistory,
+                onLimitChange = { viewModel.updateDailyLimit(it) },
+                onHourlyLimitChange = { viewModel.updateHourlyLimit(it) },
+                onLimitModeChange = { viewModel.updateLimitMode(it) },
+                onSwapChange = { activity, deck -> viewModel.updateSwap(activity, deck) },
+                onTrackedAppsChange = { viewModel.updateTrackedApps(it) },
+                onPause = { viewModel.pauseTracking(it) },
+                onResume = { viewModel.resumeTracking() }
+            )
+        }
     }
 }

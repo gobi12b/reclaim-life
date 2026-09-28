@@ -38,6 +38,7 @@ class SettingsRepository(private val context: Context) {
         val LIMIT_MODE = stringPreferencesKey("limit_mode")
         val REPLACEMENT_ACTIVITY = stringPreferencesKey("replacement_activity")
         val FLASHCARD_DECK = stringPreferencesKey("flashcard_deck")
+        val TRACKED_APPS = stringPreferencesKey("tracked_apps")
     }
 
     val onboardingComplete: Flow<Boolean> =
@@ -61,6 +62,14 @@ class SettingsRepository(private val context: Context) {
     /** Only used when [replacementActivity] is flashcards, but kept so switching back remembers it. */
     val flashcardDeck: Flow<FlashcardDeck> =
         context.settingsDataStore.data.map { FlashcardDeck.fromStored(it[Keys.FLASHCARD_DECK]) }
+
+    /** Apps that get the open-pause and appear in the stats. Instagram and YouTube until changed. */
+    val trackedApps: Flow<List<TrackedApp>> =
+        context.settingsDataStore.data.map { parseTrackedApps(it[Keys.TRACKED_APPS]) }
+
+    suspend fun setTrackedApps(apps: List<TrackedApp>) {
+        context.settingsDataStore.edit { it[Keys.TRACKED_APPS] = serializeTrackedApps(apps) }
+    }
 
     /** Empty string means no nickname was given — callers fall back to generic phrasing. */
     val nickname: Flow<String> =

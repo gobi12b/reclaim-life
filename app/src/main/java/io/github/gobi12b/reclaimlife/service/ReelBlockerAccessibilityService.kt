@@ -16,6 +16,7 @@ import io.github.gobi12b.reclaimlife.ReclaimLifeApp
 import io.github.gobi12b.reclaimlife.R
 import io.github.gobi12b.reclaimlife.data.LimitMode
 import io.github.gobi12b.reclaimlife.data.Mood
+import io.github.gobi12b.reclaimlife.data.DEFAULT_TRACKED_APPS
 import io.github.gobi12b.reclaimlife.data.TargetApps
 import io.github.gobi12b.reclaimlife.data.formatPauseRemaining
 import io.github.gobi12b.reclaimlife.data.hourlyUnblockAt
@@ -39,11 +40,11 @@ import kotlinx.coroutines.launch
  * it via the accessibility-overlay window type, which needs no extra "draw over other apps"
  * permission. View IDs are only reported because the config sets flagReportViewIds.
  *
- * Opening Instagram/YouTube starts an app session, which first shows the [GateActivity]
- * breathing space. The config limits events to Instagram and YouTube (android:packageNames), so
+ * Opening any app the user chose to watch starts an app session, which first shows the
+ * [GateActivity] pause. Events come only from those apps (packageNames, set from settings), so
  * leaving them produces no event here. Instead, during a session, [foregroundCheckRunnable] looks
- * at which app is in front — adding up time spent for the gate's "last 24 hours" figure — and
- * ends the session once it's neither a target app nor ReclaimLife.
+ * at which app is in front — adding up time spent for the stats — and ends the session once it's
+ * neither a chosen app nor ReclaimLife.
  */
 class ReelBlockerAccessibilityService : AccessibilityService() {
 
@@ -58,6 +59,8 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
     private val trackingPaused: Boolean get() = System.currentTimeMillis() < pausedUntilMs
     private val effectiveLimit: Int get() = dailyLimit + extraAllowance
     private var limitMode: LimitMode = LimitMode.DAILY
+    /** The apps the user chose: they get the open-pause and their time is tracked. */
+    private var trackedPackages: Set<String> = DEFAULT_TRACKED_APPS.map { it.packageName }.toSet()
     /** Reels allowed per rolling hour. Extras granted on the block screen don't apply to it. */
     private var hourlyLimit: Int = 0
     /** 0 (never blocks — see [hourlyUnblockAt]) unless the mode enforces the hourly limit. */
@@ -67,7 +70,7 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
 
     private var lastBlockShownAtMs: Long = 0L
 
-    // An app session runs from opening Instagram/YouTube until something else is in front; our own
+    // An app session runs from opening a chosen app until something else is in front; our own
     // Gate/Block screens on top of it don't end it.
     private var sessionPackage: String? = null
     private var awaySinceMs: Long = 0L
@@ -100,7 +103,7 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         override fun run() {
             val session = sessionPackage ?: return
             val now = System.currentTimeMillis()
-            // Only the front window's package name is read, and only Instagram/YouTube windows can
+            // Only the front window's package name is read, and only the chosen apps' windows can
             // be read at all — our own Gate/Block screens read as no window, so they report in via
             // OwnScreens and count as staying. Anything else, or no window, counts as leaving.
             val front = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
@@ -116,7 +119,7 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
             } else {
                 flushUsage(session)
             }
-            if (front == packageName || TargetApps.isTarget(front)) {
+            if (front == packageName || front in trackedPackages) {
                 awaySinceMs = 0L
             } else if (awaySinceMs == 0L) {
                 awaySinceMs = now
@@ -149,6 +152,16 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
             app.reelUsageRepository.closeOutPreviousDayIfNeeded(limit, mode)
         }
         serviceScope.launch { app.settingsRepository.migrateLegacyPauseIfNeeded() }
+        serviceScope.launch {
+            app.settingsRepository.trackedApps.collectLatest { apps ->
+                trackedPackages = apps.map { it.packageName }.toSet()
+                // Listen to exactly the chosen apps. The config's static list is only the default.
+                serviceInfo = serviceInfo?.apply {
+                    packageNames = trackedPackages.ifEmpty { TargetApps.PACKAGES }.toTypedArray()
+                }
+                sessionPackage?.let { if (it !in trackedPackages) endAppSession() }
+            }
+        }
         serviceScope.launch {
             app.settingsRepository.dailyReelLimit.collectLatest {
                 dailyLimit = it
@@ -205,12 +218,12 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString()
 
-        // Our own Gate/Block screens briefly taking focus over Instagram/YouTube isn't a real
+        // Our own Gate/Block screens briefly taking focus over a chosen app isn't a real
         // app switch — ignore them entirely so they can't influence session tracking.
         if (packageName == this.packageName) return
 
-        // The config's packageNames already filters these out; this just keeps it explicit.
-        if (packageName == null || !TargetApps.isTarget(packageName)) return
+        // The service info's packageNames already filters these out; this just keeps it explicit.
+        if (packageName == null || packageName !in trackedPackages) return
 
         // Opening the app (rather than moving around inside it) starts a session behind the gate.
         if (packageName != sessionPackage && isInFront(packageName) && startAppSession(packageName)) return
@@ -220,7 +233,9 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         val onReels = isOnReelSurface(packageName, event)
         if (onReels) showCounterOverlay() else scheduleLeaveSession()
 
-        if (trackingPaused) return
+        // Only Instagram and YouTube have reels to count and limits to enforce; other chosen apps
+        // just get the open-pause and their time tracked.
+        if (trackingPaused || !TargetApps.countsReels(packageName)) return
 
         // Blocking is deliberately app-wide, not reels-only: once over the limit, the stop screen
         // takes over Instagram/YouTube wherever you are in it.
@@ -259,7 +274,7 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
 
         // Every open gets the gate, unless the block screen is about to take over. A pause stops
         // counting and blocking, but the gate still shows — it's a moment to breathe, not a limit.
-        val blocked = !trackingPaused &&
+        val blocked = !trackingPaused && TargetApps.countsReels(target) &&
             (dailyLimitReached || hourlyUnblockAt(recentReelTimes, enforcedHourlyLimit, now) != null)
         if (blocked) return false
 

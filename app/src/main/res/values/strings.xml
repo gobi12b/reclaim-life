@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">ReclaimLife</string>
     <string name="accessibility_service_label">ReclaimLife reel counter</string>
-    <string name="accessibility_service_description">Watches for scrolling inside Instagram Reels and YouTube Shorts so ReclaimLife can count reels against your limit and offer your 2-minute swap once you reach it. It receives events from Instagram and YouTube only, and nothing it sees leaves your phone.</string>
+    <string name="accessibility_service_description">Shows a moment to pause when you open an app you chose to watch, and counts reels in Instagram Reels and YouTube Shorts so ReclaimLife can offer your 2-minute swap at your limit. It receives events only from the apps you chose, and nothing it sees leaves your phone.</string>
     <string name="widget_description">Shows how many reels you\'ve watched today against your limit.</string>
     <string name="overlay_paused">🌿 Paused · %1$s</string>
     <string name="overlay_hourly_only">%1$s %2$d / %3$d this hour</string>
