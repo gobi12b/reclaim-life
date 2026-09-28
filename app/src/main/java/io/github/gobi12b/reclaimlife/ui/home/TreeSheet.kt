@@ -60,17 +60,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import io.github.gobi12b.reclaimlife.data.GrowthCode
-import io.github.gobi12b.reclaimlife.data.Keepsake
 import io.github.gobi12b.reclaimlife.data.LimitKind
 import io.github.gobi12b.reclaimlife.data.LimitRaise
 import io.github.gobi12b.reclaimlife.data.RestReason
 import io.github.gobi12b.reclaimlife.data.SPRIGS_PER_BRANCH
 import io.github.gobi12b.reclaimlife.data.TREE_NAME_MAX
-import io.github.gobi12b.reclaimlife.data.TreeStage
 import io.github.gobi12b.reclaimlife.data.TreeState
 import io.github.gobi12b.reclaimlife.data.nextStreakMilestone
 import io.github.gobi12b.reclaimlife.data.treeNameInline
@@ -192,9 +189,8 @@ internal fun TreeSheet(tree: TreeState, onDismiss: () -> Unit, onRename: (String
                 }
             }
 
-            // 4. The streak is what grows it, so it leads, with the visitors it brings.
+            // 4. The streak is what grows it, so it leads. Milestones stay a surprise; they live on Profile.
             StreakCard(tree, reducedMotion)
-            MilestonesShelf(tree, reducedMotion)
 
             // 5. The last 7 days.
             Column {
@@ -349,31 +345,18 @@ private fun StreakCard(tree: TreeState, reducedMotion: Boolean) {
                 }
             }
         }
-        val visitor = tree.nextKeepsake
-        if (visitor != null) {
-            // The next visitor, shown in full colour: a concrete thing to look forward to.
-            val daysLeft = (visitor.streak - tree.streak).coerceAtLeast(1)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .padding(top = 14.dp)
-                    .fillMaxWidth()
-                    .background(scheme.surface.copy(alpha = 0.55f), RoundedCornerShape(Radii.chip))
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-            ) {
-                KeepsakeIcon(visitor, earned = true, silhouette = scheme.outline, reducedMotion = reducedMotion, size = 44.dp)
-                Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text(
-                        "Next milestone: ${visitor.label}",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = scheme.onSurface
-                    )
-                    Text(
-                        "Joins your tree in " + (if (daysLeft == 1) "1 more day" else "$daysLeft more days"),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = scheme.onSurfaceVariant
-                    )
-                }
+        val surprise = tree.nextKeepsake
+        if (surprise != null) {
+            // Something is coming, but not what: milestones are a surprise.
+            val daysLeft = (surprise.streak - tree.streak).coerceAtLeast(1)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
+                StarGlyph(scheme.onPrimaryContainer, Modifier.size(16.dp))
+                Text(
+                    (if (daysLeft == 1) "1 more day" else "$daysLeft more days") + " in a row for a surprise",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onPrimaryContainer,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
@@ -384,69 +367,6 @@ private fun StreakCard(tree: TreeState, reducedMotion: Boolean) {
                     color = scheme.onPrimaryContainer,
                     modifier = Modifier.padding(start = 8.dp)
                 )
-            }
-        }
-    }
-}
-
-/**
- * Every milestone a streak adds to the tree, all in colour so each is worth wanting. Earned ones
- * move and carry their name; the rest are softer, with the streak that adds them.
- */
-@Composable
-private fun MilestonesShelf(tree: TreeState, reducedMotion: Boolean) {
-    val scheme = MaterialTheme.colorScheme
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionHeading("Milestones", Modifier.weight(1f))
-            Text(
-                "${tree.keepsakes.size} of ${Keepsake.entries.size}",
-                style = MaterialTheme.typography.labelLarge,
-                color = scheme.onSurfaceVariant
-            )
-        }
-        Text(
-            "Added to your tree on these streaks.",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 2.dp)
-        )
-        Row(
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
-        ) {
-            Keepsake.entries.forEach { k ->
-                val earned = k in tree.keepsakes
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .width(52.dp)
-                        .clearAndSetSemantics {
-                            contentDescription = if (earned) "${k.label}, on your tree" else "${k.label}, at a ${k.streak}-day streak"
-                        }
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                if (earned) scheme.primaryContainer else scheme.surfaceContainerHigh,
-                                RoundedCornerShape(Radii.chip)
-                            )
-                            .then(if (earned) Modifier else Modifier.alpha(0.55f))
-                    ) {
-                        KeepsakeIcon(k, earned = earned, silhouette = null, reducedMotion = reducedMotion, size = 36.dp)
-                    }
-                    Text(
-                        if (earned) k.label else "${k.streak} days",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (earned) scheme.onSurface else scheme.onSurfaceVariant,
-                        fontWeight = if (earned) FontWeight.SemiBold else null,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
             }
         }
     }

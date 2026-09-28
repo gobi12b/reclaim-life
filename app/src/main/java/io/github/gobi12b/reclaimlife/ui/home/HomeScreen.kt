@@ -303,6 +303,13 @@ fun HomeScreen(
 
         if (showSavedDetails) progress?.let { SavedDetailSheet(it, onDismiss = { showSavedDetails = false }) }
 
+        // A new milestone is revealed once, as a surprise, the next time Home is open.
+        val seen by viewModel.seenKeepsakes.collectAsStateWithLifecycle()
+        val reveal = progress?.tree?.let { tree -> seen?.let { set -> tree.keepsakes.firstOrNull { it.name !in set } } }
+        if (reveal != null && !showTreeSheet && !showPauseSheet) {
+            MilestoneReveal(reveal, progress.tree.name, reducedMotion, onDone = { viewModel.markKeepsakeSeen(reveal) })
+        }
+
         if (showTreeSheet) {
             progress?.let {
                 TreeSheet(

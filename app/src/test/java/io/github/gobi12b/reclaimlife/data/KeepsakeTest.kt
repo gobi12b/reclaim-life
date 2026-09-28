@@ -8,9 +8,10 @@ import org.junit.Test
 class KeepsakeTest {
     @Test
     fun keepsakesComeFromTheBestStreakAndStay() {
-        assertEquals(emptyList<Keepsake>(), keepsakesFor(2))
-        assertEquals(listOf(Keepsake.LADYBUG), keepsakesFor(3))
-        assertEquals(listOf(Keepsake.LADYBUG, Keepsake.BUTTERFLY), keepsakesFor(13))
+        // The watering can comes with planting, before any streak.
+        assertEquals(listOf(Keepsake.WATERING_CAN), keepsakesFor(0))
+        assertEquals(listOf(Keepsake.WATERING_CAN, Keepsake.LADYBUG), keepsakesFor(3))
+        assertEquals(listOf(Keepsake.WATERING_CAN, Keepsake.LADYBUG, Keepsake.BUTTERFLY), keepsakesFor(13))
         assertEquals(Keepsake.entries, keepsakesFor(365))
     }
 
@@ -24,7 +25,8 @@ class KeepsakeTest {
     @Test
     fun everyKeepsakeLandsOnABoostDay() {
         // A visitor arrives with a streak boost, so the callout can name it.
-        Keepsake.entries.forEach { assertTrue(milestoneBonus(it.streak) > 0) }
+        Keepsake.entries.filter { it.streak > 0 }.forEach { assertTrue(milestoneBonus(it.streak) > 0) }
+        assertNull(keepsakeAt(0))
         assertEquals(Keepsake.BUTTERFLY, keepsakeAt(7))
         assertNull(keepsakeAt(8))
     }
@@ -32,7 +34,7 @@ class KeepsakeTest {
     @Test
     fun aBrokenStreakKeepsWhatWasEarned() {
         val state = treeState("", emptyMap(), 0, null, null, 0, "2026-09-29", 9, null, emptyMap(), false, bestStreak = 10)
-        assertEquals(listOf(Keepsake.LADYBUG, Keepsake.BUTTERFLY), state.keepsakes)
+        assertEquals(listOf(Keepsake.WATERING_CAN, Keepsake.LADYBUG, Keepsake.BUTTERFLY), state.keepsakes)
         assertEquals(Keepsake.NEST, state.nextKeepsake)
     }
 }

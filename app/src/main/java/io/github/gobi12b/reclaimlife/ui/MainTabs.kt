@@ -29,12 +29,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import io.github.gobi12b.reclaimlife.ui.insights.InsightsScreen
 import io.github.gobi12b.reclaimlife.ui.learn.LearnScreen
+import io.github.gobi12b.reclaimlife.ui.profile.ProfileScreen
 
-enum class MainTab(val label: String) { TODAY("Today"), INSIGHTS("Insights"), LEARN("Learn") }
+enum class MainTab(val label: String) { TODAY("Today"), INSIGHTS("Insights"), LEARN("Learn"), PROFILE("Profile") }
 
 /**
- * The three places after setup: Today (the dashboard and settings), Insights (the week in
- * charts) and Learn. Back from Insights or Learn returns to Today before leaving the app.
+ * The four places after setup: Today (the dashboard and settings), Insights (the week in
+ * charts), Learn and Profile (your tree and milestones). Back from the others returns to Today
+ * before leaving the app.
  */
 @Composable
 fun MainTabs(today: @Composable (Modifier) -> Unit) {
@@ -68,11 +70,12 @@ fun MainTabs(today: @Composable (Modifier) -> Unit) {
             MainTab.TODAY -> today(content)
             MainTab.INSIGHTS -> InsightsScreen(content.statusBarsPadding())
             MainTab.LEARN -> LearnScreen(content.statusBarsPadding())
+            MainTab.PROFILE -> ProfileScreen(content.statusBarsPadding())
         }
     }
 }
 
-/** Small drawn icons, so the app needs no icon library: a sprout, three bars, an open book. */
+/** Small drawn icons, so the app needs no icon library: a sprout, three bars, an open book, a person. */
 @Composable
 private fun TabIcon(tab: MainTab, color: Color) {
     Canvas(modifier = Modifier.size(24.dp)) {
@@ -113,6 +116,14 @@ private fun TabIcon(tab: MainTab, color: Color) {
                 }
                 drawPath(book, color, style = stroke)
                 drawLine(color, Offset(w * 0.5f, w * 0.28f), Offset(w * 0.5f, w * 0.86f), strokeWidth = 2.dp.toPx())
+            }
+            MainTab.PROFILE -> {
+                drawCircle(color, radius = w * 0.18f, center = Offset(w * 0.5f, w * 0.34f), style = stroke)
+                val shoulders = Path().apply {
+                    moveTo(w * 0.16f, w * 0.9f)
+                    cubicTo(w * 0.2f, w * 0.64f, w * 0.8f, w * 0.64f, w * 0.84f, w * 0.9f)
+                }
+                drawPath(shoulders, color, style = stroke)
             }
         }
     }

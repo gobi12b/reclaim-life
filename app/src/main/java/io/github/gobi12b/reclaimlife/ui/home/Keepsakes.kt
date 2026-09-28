@@ -13,12 +13,15 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -40,6 +43,9 @@ private val BirdBelly = Color(0xFFF6E7C8)
 private val Beak = Color(0xFFF2B233)
 private val Glow = Color(0xFFFFF2A8)
 private val LanternRed = Color(0xFFD9573B)
+private val CanTeal = Color(0xFF6FB3B8)
+private val CanDark = Color(0xFF4E8F94)
+private val WaterDrop = Color(0xFF7CC4E8)
 
 private const val TAU = (2 * Math.PI).toFloat()
 
@@ -51,6 +57,36 @@ internal fun DrawScope.drawKeepsake(k: Keepsake, c: Offset, u: Float, phase: Flo
     val moving = phase >= 0f
     fun col(real: Color) = tint ?: real
     when (k) {
+        Keepsake.WATERING_CAN -> {
+            // Every few seconds it tips forward and a drop falls from the spout.
+            val cycle = if (moving) (phase * 2f) % 1f else 1f
+            val tip = if (cycle < 0.3f) sin(cycle / 0.3f * Math.PI.toFloat()) else 0f
+            rotate(degrees = -18f * tip, pivot = c + Offset(0f, 5f * u)) {
+                drawRoundRect(
+                    col(CanTeal),
+                    topLeft = c + Offset(-5f * u, -4f * u),
+                    size = Size(10f * u, 9f * u),
+                    cornerRadius = CornerRadius(2f * u)
+                )
+                // Spout, rose and handle.
+                drawLine(col(CanTeal), c + Offset(4f * u, 1f * u), c + Offset(10f * u, -5f * u), strokeWidth = 1.6f * u, cap = StrokeCap.Round)
+                drawCircle(col(CanDark), radius = 1.4f * u, center = c + Offset(10.5f * u, -5.5f * u))
+                drawArc(
+                    col(CanDark),
+                    startAngle = 180f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = c + Offset(-4f * u, -8f * u),
+                    size = Size(8f * u, 8f * u),
+                    style = Stroke(width = 1.4f * u)
+                )
+                if (tint == null) drawRect(CanDark.copy(alpha = 0.35f), topLeft = c + Offset(-5f * u, 1.5f * u), size = Size(10f * u, 1.2f * u))
+            }
+            if (moving && tint == null && cycle in 0.15f..0.45f) {
+                val t = (cycle - 0.15f) / 0.3f
+                drawCircle(WaterDrop.copy(alpha = 1f - t), radius = 1.1f * u, center = c + Offset(11.5f * u, -3f * u + t * 9f * u))
+            }
+        }
         Keepsake.LADYBUG -> {
             // Scuttles a little side to side, with a head bob.
             val c = if (moving) c + Offset(1.4f * u * sin(phase * 4f * TAU), 0f) else c
@@ -141,10 +177,11 @@ internal fun DrawScope.drawKeepsake(k: Keepsake, c: Offset, u: Float, phase: Flo
 private fun keepsakeSpot(k: Keepsake, stage: TreeStage, details: Int): Offset {
     val tree = if (plantShapeOf(stage) == null) treeShapeOf(stage, details) else null
     return when (k) {
+        Keepsake.WATERING_CAN -> Offset(20f, 137f)
         Keepsake.LADYBUG -> Offset(74f, 139f)
         Keepsake.BUTTERFLY -> Offset(80f, (tree?.top?.y ?: 100f) - 4f)
-        Keepsake.NEST -> if (tree != null) Offset(56f, 142f - tree.trunk.height + 2f) else Offset(34f, 139f)
-        Keepsake.SONGBIRD -> if (tree != null) Offset(tree.top.x - 4f, tree.top.y - tree.top.r - 3f) else Offset(20f, 138f)
+        Keepsake.NEST -> if (tree != null) Offset(56f, 142f - tree.trunk.height + 2f) else Offset(38f, 139f)
+        Keepsake.SONGBIRD -> if (tree != null) Offset(tree.top.x - 4f, tree.top.y - tree.top.r - 3f) else Offset(19f, 127f)
         Keepsake.FIREFLIES -> Offset(30f, (tree?.top?.y ?: 104f) + 10f)
         Keepsake.LANTERN -> Offset(94f, 141f)
     }

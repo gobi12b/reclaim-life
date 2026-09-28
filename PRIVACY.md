@@ -90,6 +90,9 @@ ReclaimLife stores the following in its private app storage:
 - when you changed a limit, with the old and new number, deleted after two weeks;
 - how many 2-minute swaps you finished each day, deleted after two weeks.
 
+When you tap Share on the Profile tab, ReclaimLife draws a picture of your tree into its
+private cache and hands it to the app you pick; it's replaced the next time you share.
+
 The home-screen widget shows the same count and limit. Uninstalling the app, or clearing its
 storage in Settings → Apps → ReclaimLife, deletes all of it.
 

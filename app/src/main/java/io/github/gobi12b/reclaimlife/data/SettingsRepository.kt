@@ -76,6 +76,7 @@ class SettingsRepository(private val context: Context) {
         val TREE_INTRO_SEEN = booleanPreferencesKey("tree_intro_seen")
         val TREE_PLANTED_AT_MS = longPreferencesKey("tree_planted_at_ms")
         val TREE_BEST_STREAK = intPreferencesKey("tree_best_streak")
+        val SEEN_KEEPSAKES = stringSetPreferencesKey("seen_keepsakes")
     }
 
     val onboardingComplete: Flow<Boolean> =
@@ -298,6 +299,13 @@ class SettingsRepository(private val context: Context) {
 
     /** The longest streak ever reached; keepsakes come from it, so it only goes up. */
     val treeBestStreak: Flow<Int> = context.settingsDataStore.data.map { it[Keys.TREE_BEST_STREAK] ?: 0 }
+
+    /** Milestones whose reveal has been shown, by name. */
+    val seenKeepsakes: Flow<Set<String>> = context.settingsDataStore.data.map { it[Keys.SEEN_KEEPSAKES].orEmpty() }
+
+    suspend fun markKeepsakeSeen(name: String) {
+        context.settingsDataStore.edit { it[Keys.SEEN_KEEPSAKES] = it[Keys.SEEN_KEEPSAKES].orEmpty() + name }
+    }
 
     suspend fun raiseTreeBestStreak(streak: Int) {
         context.settingsDataStore.edit { if (streak > (it[Keys.TREE_BEST_STREAK] ?: 0)) it[Keys.TREE_BEST_STREAK] = streak }

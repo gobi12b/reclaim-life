@@ -12,18 +12,19 @@ import io.github.gobi12b.reclaimlife.data.DEFAULT_TRACKED_APPS
 import io.github.gobi12b.reclaimlife.data.DayOutcome
 import io.github.gobi12b.reclaimlife.data.FlashcardDeck
 import io.github.gobi12b.reclaimlife.data.GateDecision
+import io.github.gobi12b.reclaimlife.data.Keepsake
 import io.github.gobi12b.reclaimlife.data.LimitKind
 import io.github.gobi12b.reclaimlife.data.LimitMode
 import io.github.gobi12b.reclaimlife.data.LimitRaise
-import io.github.gobi12b.reclaimlife.data.growthTotal
-import io.github.gobi12b.reclaimlife.data.TreeStage
-import io.github.gobi12b.reclaimlife.data.detailsShown
-import io.github.gobi12b.reclaimlife.data.treeStage
 import io.github.gobi12b.reclaimlife.data.PauseDuration
 import io.github.gobi12b.reclaimlife.data.PauseEntry
 import io.github.gobi12b.reclaimlife.data.PauseReason
 import io.github.gobi12b.reclaimlife.data.ReplacementActivity
 import io.github.gobi12b.reclaimlife.data.TrackedApp
+import io.github.gobi12b.reclaimlife.data.TreeStage
+import io.github.gobi12b.reclaimlife.data.detailsShown
+import io.github.gobi12b.reclaimlife.data.growthTotal
+import io.github.gobi12b.reclaimlife.data.treeStage
 import io.github.gobi12b.reclaimlife.service.syncProgressData
 import io.github.gobi12b.reclaimlife.widget.refreshReelWidget
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -111,6 +113,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Meet your tree is done: name it (optional) and go to Home. */
     fun completeTreeIntro(name: String) {
         viewModelScope.launch { settings.completeTreeIntro(name, System.currentTimeMillis()) }
+    }
+
+    /** Milestones already revealed; Home reveals any earned one not in here, once. */
+    val seenKeepsakes: StateFlow<Set<String>?> = settings.seenKeepsakes.map<Set<String>, Set<String>?> { it }.state(null)
+
+    fun markKeepsakeSeen(k: Keepsake) {
+        viewModelScope.launch { settings.markKeepsakeSeen(k.name) }
     }
 
     fun renameTree(name: String) {

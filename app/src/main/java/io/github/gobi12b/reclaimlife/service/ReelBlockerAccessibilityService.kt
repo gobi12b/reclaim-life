@@ -518,23 +518,21 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         val view = counterText ?: return
         if (container.visibility != View.VISIBLE) return
         if (trackingPaused) {
-            counterPlant?.setProgress(0f)
+            counterPlant?.setProgress(0, 1)
             view.text = getString(R.string.overlay_paused, formatPauseRemaining(pausedUntilMs - System.currentTimeMillis()))
             return
         }
         val thisHour = reelsInWindow(recentReelTimes, System.currentTimeMillis()).size
         if (!limitMode.usesDaily) {
-            counterPlant?.setProgress(if (hourlyLimit > 0) thisHour.toFloat() / hourlyLimit else 0f)
+            counterPlant?.setProgress(thisHour, hourlyLimit)
             view.text = getString(R.string.overlay_hourly_only, thisHour, hourlyLimit)
             return
         }
         // The plant shows how close the limit is; the text keeps the exact numbers.
-        counterPlant?.setProgress(
-            maxOf(
-                if (effectiveLimit > 0) todayCount.toFloat() / effectiveLimit else 0f,
-                if (limitMode.usesHourly && hourlyLimit > 0) thisHour.toFloat() / hourlyLimit else 0f
-            )
-        )
+        // Whichever limit is closer sets the mood.
+        val hourCloser = limitMode.usesHourly && hourlyLimit > 0 && effectiveLimit > 0 &&
+            thisHour.toFloat() / hourlyLimit > todayCount.toFloat() / effectiveLimit
+        if (hourCloser) counterPlant?.setProgress(thisHour, hourlyLimit) else counterPlant?.setProgress(todayCount, effectiveLimit)
         // Same shape as Home and the widget: the total you're blocked at, with any extra called
         // out, so "190" never appears without explaining where the extra 4 came from.
         val dailyText = if (extraAllowance > 0) {
