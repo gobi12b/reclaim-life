@@ -90,6 +90,10 @@ ReclaimLife stores the following in its private app storage:
 - when you changed a limit, with the old and new number, deleted after two weeks;
 - how many 2-minute swaps you finished each day, deleted after two weeks.
 
+If you add a profile photo, ReclaimLife keeps one small copy of it in its private storage. It
+isn't backed up and never leaves your phone unless you share your card. Removing the photo
+deletes it.
+
 When you tap Share on the Profile tab, ReclaimLife draws a picture of your tree into its
 private cache and hands it to the app you pick; it's replaced the next time you share.
 

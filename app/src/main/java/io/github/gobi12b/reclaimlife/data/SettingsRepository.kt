@@ -48,6 +48,7 @@ class SettingsRepository(private val context: Context) {
         val APPS_CARD_DISMISSED = booleanPreferencesKey("onboarding_apps_card_dismissed")
         val DAILY_REEL_LIMIT = intPreferencesKey("daily_reel_limit")
         val NICKNAME = stringPreferencesKey("nickname")
+        val PROFILE_PHOTO_VERSION = longPreferencesKey("profile_photo_version")
         /** Legacy open-ended pause flag; only read to migrate it into [PAUSED_UNTIL_MS]. */
         val LEGACY_TRACKING_PAUSED = booleanPreferencesKey("tracking_paused")
         val PAUSED_FROM_MS = longPreferencesKey("paused_from_ms")
@@ -223,6 +224,18 @@ class SettingsRepository(private val context: Context) {
     /** Empty string means no nickname was given — callers fall back to generic phrasing. */
     val nickname: Flow<String> =
         context.settingsDataStore.data.map { it[Keys.NICKNAME] ?: "" }
+
+    /** From the Profile tab. Kept short, like onboarding's field. */
+    suspend fun setNickname(name: String) {
+        context.settingsDataStore.edit { it[Keys.NICKNAME] = name.trim().take(20) }
+    }
+
+    /** Bumped whenever the profile photo changes, so screens reload it; 0 means no photo. */
+    val profilePhotoVersion: Flow<Long> = context.settingsDataStore.data.map { it[Keys.PROFILE_PHOTO_VERSION] ?: 0L }
+
+    suspend fun setProfilePhotoVersion(version: Long) {
+        context.settingsDataStore.edit { it[Keys.PROFILE_PHOTO_VERSION] = version }
+    }
 
     /**
      * Counting and blocking are skipped from [pausedFromMs] until this epoch-millis time. 0 (or

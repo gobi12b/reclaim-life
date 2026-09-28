@@ -3,7 +3,12 @@ package io.github.gobi12b.reclaimlife.ui.profile
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,15 +23,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -35,16 +45,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import io.github.gobi12b.reclaimlife.ReclaimLifeApp
@@ -83,6 +98,17 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val card = rememberGraphicsLayer()
     var sharing by remember { mutableStateOf(false) }
+    val settings = (context.applicationContext as ReclaimLifeApp).settingsRepository
+    val nickname by settings.nickname.collectAsState(initial = "")
+    val photoVersion by settings.profilePhotoVersion.collectAsState(initial = 0L)
+    val photo by produceState<ImageBitmap?>(null, photoVersion) {
+        value = if (photoVersion > 0L) ProfilePhoto.load(context)?.asImageBitmap() else null
+    }
+    var editing by remember { mutableStateOf(false) }
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch { if (ProfilePhoto.save(context, uri)) settings.setProfilePhotoVersion(System.currentTimeMillis()) }
+    }
+    val choosePhoto = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
 
     Column(
         modifier = modifier
@@ -90,10 +116,9 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        Text("Profile", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+        ProfileHeader(nickname.trim(), photo, onPhoto = choosePhoto, onEdit = { editing = true })
         val tree = progress?.tree ?: return@Column
         val savedMs = progress.sinceStartedMs.takeIf { progress.hasBaseline && it >= 60_000L }
-        val nickname by (context.applicationContext as ReclaimLifeApp).settingsRepository.nickname.collectAsState(initial = "")
 
         // Recorded as it draws, so Share saves exactly what's on screen. The rounded clip sits
         // outside the recording: on screen it's a card, in the image it's full-bleed.
@@ -106,7 +131,7 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
                     drawLayer(card)
                 }
         ) {
-            ShareCard(tree, savedMs, nickname.trim(), reducedMotion)
+            ShareCard(tree, savedMs, nickname.trim(), photo, reducedMotion)
         }
 
         Button(
@@ -130,6 +155,109 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
         MilestoneGrid(tree, reducedMotion)
         Spacer(Modifier.height(24.dp))
     }
+
+    if (editing) {
+        EditProfileDialog(
+            current = nickname,
+            hasPhoto = photo != null,
+            onSave = { name ->
+                scope.launch { settings.setNickname(name) }
+                editing = false
+            },
+            onChangePhoto = {
+                editing = false
+                choosePhoto()
+            },
+            onRemovePhoto = {
+                ProfilePhoto.delete(context)
+                scope.launch { settings.setProfilePhotoVersion(0L) }
+                editing = false
+            },
+            onDismiss = { editing = false }
+        )
+    }
+}
+
+/** Photo and name, top of the tab. Tapping the photo picks a new one; Edit changes the name. */
+@Composable
+private fun ProfileHeader(name: String, photo: ImageBitmap?, onPhoto: () -> Unit, onEdit: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Avatar(
+            name,
+            photo,
+            size = 64.dp,
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable(onClickLabel = if (photo == null) "Add a photo" else "Change photo", role = Role.Button, onClick = onPhoto)
+        )
+        Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
+            Text(
+                name.ifEmpty { "Your profile" },
+                style = MaterialTheme.typography.headlineSmall.copy(fontFamily = DisplayFamily),
+                modifier = Modifier.semantics { heading() }
+            )
+            if (photo == null) {
+                Text("Tap the circle to add a photo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        TextButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp)) { Text("Edit") }
+    }
+}
+
+/** The photo in a circle, or the name's first letter when there's no photo. */
+@Composable
+internal fun Avatar(name: String, photo: ImageBitmap?, size: Dp, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(scheme.primaryContainer)
+    ) {
+        if (photo != null) {
+            Image(photo, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+            Text(
+                name.firstOrNull()?.uppercase() ?: "+",
+                style = MaterialTheme.typography.headlineSmall,
+                color = scheme.onPrimaryContainer
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditProfileDialog(
+    current: String,
+    hasPhoto: Boolean,
+    onSave: (String) -> Unit,
+    onChangePhoto: () -> Unit,
+    onRemovePhoto: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(current) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit profile") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { if (it.length <= 20) text = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(modifier = Modifier.padding(top = 8.dp)) {
+                    TextButton(onClick = onChangePhoto) { Text(if (hasPhoto) "Change photo" else "Add photo") }
+                    if (hasPhoto) TextButton(onClick = onRemovePhoto) { Text("Remove photo") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 /**
@@ -138,7 +266,7 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
  * baseline), and one quiet line of detail.
  */
 @Composable
-private fun ShareCard(tree: TreeState, savedMs: Long?, nickname: String, reducedMotion: Boolean) {
+private fun ShareCard(tree: TreeState, savedMs: Long?, nickname: String, photo: ImageBitmap?, reducedMotion: Boolean) {
     val colors = MaterialTheme.reclaim
     val minutes = savedMs?.let { it / 60_000L }
     val detail = buildList {
@@ -172,6 +300,7 @@ private fun ShareCard(tree: TreeState, savedMs: Long?, nickname: String, reduced
                 .background(colors.heroGround)
                 .padding(horizontal = 24.dp, vertical = 20.dp)
         ) {
+            if (photo != null) Avatar(nickname, photo, size = 40.dp, modifier = Modifier.padding(bottom = 8.dp))
             Text(
                 if (nickname.isEmpty()) "You're awesome!" else "$nickname, you're awesome!",
                 style = MaterialTheme.typography.titleMedium,
