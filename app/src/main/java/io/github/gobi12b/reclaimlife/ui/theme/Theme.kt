@@ -9,6 +9,11 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
@@ -69,6 +74,56 @@ private val LightColorScheme = lightColorScheme(
     surfaceContainerHighest = SurfaceHighestLight
 )
 
+/**
+ * Home-only roles Material's scheme has no slot for: the hero gradient, the text on it, and the
+ * plant. Kept beside the scheme so light and dark switch together.
+ */
+@Immutable
+data class ReclaimColors(
+    val heroTop: Color,
+    val heroBottom: Color,
+    val onHero: Color,
+    val onHeroMuted: Color,
+    val heroGround: Color,
+    val sunGlow: Color,
+    val plantStem: Color,
+    val plantLeaf: Color,
+    val plantLeafBright: Color,
+    val plantBloom: Color
+)
+
+val LightReclaimColors = ReclaimColors(
+    heroTop = HeroTopLight,
+    heroBottom = HeroBottomLight,
+    onHero = OnHeroLight,
+    onHeroMuted = OnHeroMutedLight,
+    heroGround = HeroGroundLight,
+    sunGlow = SunGlowLight,
+    plantStem = PlantStemLight,
+    plantLeaf = PlantLeafLight,
+    plantLeafBright = PlantLeafBrightLight,
+    plantBloom = PlantBloomLight
+)
+
+val DarkReclaimColors = ReclaimColors(
+    heroTop = HeroTopDark,
+    heroBottom = HeroBottomDark,
+    onHero = OnHeroDark,
+    onHeroMuted = OnHeroMutedDark,
+    heroGround = HeroGroundDark,
+    sunGlow = SunGlowDark,
+    plantStem = PlantStemDark,
+    plantLeaf = PlantLeafDark,
+    plantLeafBright = PlantLeafBrightDark,
+    plantBloom = PlantBloomDark
+)
+
+val LocalReclaimColors = staticCompositionLocalOf { LightReclaimColors }
+
+@Suppress("UnusedReceiverParameter")
+val MaterialTheme.reclaim: ReclaimColors
+    @Composable @ReadOnlyComposable get() = LocalReclaimColors.current
+
 @Composable
 fun ReclaimLifeTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -86,9 +141,11 @@ fun ReclaimLifeTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalReclaimColors provides if (darkTheme) DarkReclaimColors else LightReclaimColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

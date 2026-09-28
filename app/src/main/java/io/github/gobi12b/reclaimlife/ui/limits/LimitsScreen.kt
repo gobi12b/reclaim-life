@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.gobi12b.reclaimlife.MainViewModel
 import io.github.gobi12b.reclaimlife.data.EARLIER_TODAY_KEY
+import io.github.gobi12b.reclaimlife.data.HOURLY_BREAKS_WITHIN_LIMIT
+import io.github.gobi12b.reclaimlife.data.LimitMode
 import io.github.gobi12b.reclaimlife.data.Mood
 import io.github.gobi12b.reclaimlife.data.formatPauseRemaining
 import io.github.gobi12b.reclaimlife.data.limitStatus
@@ -189,6 +191,16 @@ fun LimitsScreen(viewModel: MainViewModel, onBack: () -> Unit, modifier: Modifie
                     if (limitMode.usesDaily) {
                         Text(
                             "Extras used today: $extraAttempts of ${BlockActivity.MAX_EXTRA_ASKS}",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 14.dp)
+                        )
+                    }
+                    // Moved from Home's week card: it explains how the dots are scored, which
+                    // belongs with the limits rather than on the progress screen.
+                    if (limitMode == LimitMode.HOURLY) {
+                        Text(
+                            "Hourly mode: a day counts as within with $HOURLY_BREAKS_WITHIN_LIMIT or fewer breaks that reopened reels.",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 14.dp)

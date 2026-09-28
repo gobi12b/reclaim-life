@@ -2,16 +2,16 @@ package io.github.gobi12b.reclaimlife.data
 
 /**
  * The one-sentence read on Home. Increases get the neutral wave and a single constructive offer —
- * no red, no "warning", no guilt. [emoji] always travels with [iconDescription].
+ * no red, no "warning", no guilt. [iconDescription] travels with the drawn glyph.
  */
-enum class InsightKind(val emoji: String, val iconDescription: String) {
-    SETTLING("🌱", "Seedling"),
-    APP_DRIVEN("🌊", "Heads-up"),
-    CREPT_UP("🌊", "Heads-up"),
-    HEAVIER("🌊", "Heads-up"),
-    CUT_BIG("⭐", "Star"),
-    CUT("👍", "Thumbs up"),
-    STEADY("⚖️", "Balance")
+enum class InsightKind(val iconDescription: String) {
+    SETTLING("Seedling"),
+    APP_DRIVEN("Heads-up"),
+    CREPT_UP("Heads-up"),
+    HEAVIER("Heads-up"),
+    CUT_BIG("Star"),
+    CUT("Leaf"),
+    STEADY("Balance")
 }
 
 enum class InsightAction { NONE, TURN_ON_GATE, LOWER_LIMIT, START_SWAP }
