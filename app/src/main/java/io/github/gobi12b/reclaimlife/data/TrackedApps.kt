@@ -39,6 +39,22 @@ fun toggleTrackedApp(current: List<TrackedApp>, packageName: String): List<Track
     return (current + TrackedApp(packageName, slot)).sortedBy { it.slot }
 }
 
+/**
+ * Toggles a row that may stand for several packages (TikTok's two): all of them on, or all off.
+ * Returns [current] unchanged when adding them all would pass [MAX_TRACKED_APPS].
+ */
+fun toggleTrackedApps(current: List<TrackedApp>, packages: List<String>): List<TrackedApp> {
+    val chosen = current.map { it.packageName }.toSet()
+    if (packages.any { it in chosen }) return current.filterNot { it.packageName in packages }
+    if (current.size + packages.size > MAX_TRACKED_APPS) return current
+    return packages.fold(current) { apps, pkg -> toggleTrackedApp(apps, pkg) }
+}
+
+/** What the onboarding apps step starts with: Instagram and YouTube, where installed. */
+fun preselectedApps(installed: Set<String>): List<TrackedApp> =
+    DEFAULT_TRACKED_APPS.map { it.packageName }.filter { it in installed }
+        .fold(emptyList()) { apps, pkg -> toggleTrackedApp(apps, pkg) }
+
 internal fun parseTrackedApps(raw: String?): List<TrackedApp> {
     if (raw == null) return DEFAULT_TRACKED_APPS
     return raw.split(',').mapNotNull { entry ->

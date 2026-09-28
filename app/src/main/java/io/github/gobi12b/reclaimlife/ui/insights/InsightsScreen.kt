@@ -19,6 +19,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import io.github.gobi12b.reclaimlife.ui.common.isInstalled
+import io.github.gobi12b.reclaimlife.ui.common.orderedReelCounts
+import io.github.gobi12b.reclaimlife.ui.common.reelRowLabel
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -74,10 +80,25 @@ fun InsightsScreen(modifier: Modifier = Modifier) {
     val app = context.applicationContext as ReclaimLifeApp
     // Series follow the chosen apps in slot order (never by rank), so a colour always means the same app.
     val tracked = rememberTrackedApps()
+    val installed = remember(tracked) { tracked.filter { isInstalled(context, it.packageName) } }
+    // Apps removed from tracking keep their history: past days still count them, as one grey series.
+    val records by app.dailyUsageRepository.records.collectAsState(initial = emptyMap())
+    val removed = remember(records, tracked) {
+        val kept = tracked.map { it.packageName }.toSet()
+        records.values.flatMap { it.apps.filterValues { day -> day.minutes > 0 }.keys }.filter { it !in kept }.toSet()
+    }
     // One extra day so the week can start at local midnight six days ago.
-    val usage = rememberUsage(days = INSIGHT_DAYS + 1, packages = remember(tracked) { tracked.map { it.packageName }.toSet() })
-    val insights = remember(usage) { usage?.let { buildInsights(it.stretches, it.loadedAtMs, it.fromSystem) } }
+    val usage = rememberUsage(
+        days = INSIGHT_DAYS + 1,
+        packages = remember(installed, removed) { installed.map { it.packageName }.toSet() + removed }
+    )
+    var filter by rememberSaveable { mutableStateOf<String?>(null) }
+    val shownPackages = if (filter == null) installed.map { it.packageName }.toSet() + removed else setOf(filter!!)
+    val insights = remember(usage, shownPackages) {
+        usage?.let { u -> buildInsights(u.stretches.filter { it.packageName in shownPackages }, u.loadedAtMs, u.fromSystem) }
+    }
     val decisions by app.reelUsageRepository.gateDecisions.collectAsState(initial = emptyList())
+    val reelsByApp by app.reelUsageRepository.todayCountsByApp.collectAsState(initial = emptyMap())
     val weekDecisions = remember(decisions, usage) {
         val since = (usage?.loadedAtMs ?: System.currentTimeMillis()) - INSIGHT_DAYS * USAGE_WINDOW_MS
         decisions.filter { it.timeMs >= since }
@@ -93,10 +114,24 @@ fun InsightsScreen(modifier: Modifier = Modifier) {
         Column {
             Text("Insights", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
             Text(
-                "Your ${tracked.size} apps over the last $INSIGHT_DAYS days",
+                "Your ${installed.size} apps over the last $INSIGHT_DAYS days",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        if (installed.size > 1) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text("All apps") })
+                installed.forEach { tracked ->
+                    FilterChip(
+                        selected = filter == tracked.packageName,
+                        onClick = { filter = tracked.packageName },
+                        leadingIcon = { Box(Modifier.size(8.dp).background(slotColor(tracked.slot), CircleShape)) },
+                        label = { Text(rememberAppLabel(tracked.packageName)) }
+                    )
+                }
+            }
         }
 
         if (insights == null) {
@@ -121,9 +156,38 @@ fun InsightsScreen(modifier: Modifier = Modifier) {
         }
 
         StatGrid(insights = insights, skipped = weekDecisions.count { it.skipped }, gateShown = weekDecisions.size)
-        DailyChartCard(insights.days, tracked)
+        ReelsTodayCard(reelsByApp.filterKeys { filter == null || it == filter }, installed)
+        DailyChartCard(
+            insights.days,
+            if (filter == null) installed else installed.filter { it.packageName == filter },
+            removed = if (filter == null) removed else emptySet()
+        )
         HourChartCard(insights)
         PatternsCard(insights)
+    }
+}
+
+/** Reels are only counted in Instagram and YouTube; the rows add up to the total shown everywhere. */
+@Composable
+private fun ReelsTodayCard(reelsByApp: Map<String, Int>, tracked: List<TrackedApp>) {
+    val context = LocalContext.current
+    val rows = orderedReelCounts(reelsByApp)
+    InsightCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Reels today", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).semantics { heading() })
+            Text("${rows.sumOf { it.second }}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+        if (rows.isEmpty()) {
+            Text("None yet today.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        }
+        rows.forEach { (key, n) ->
+            val slot = tracked.firstOrNull { it.packageName == key }?.slot
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp).semantics(mergeDescendants = true) { }) {
+                Box(Modifier.size(8.dp).background(slot?.let { slotColor(it) } ?: Color.Transparent, CircleShape))
+                Text(reelRowLabel(context, key), fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                Text("$n", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
@@ -188,9 +252,13 @@ private val dayName = SimpleDateFormat("EEEE", Locale.getDefault())
 
 /** Minutes per day, stacked by app. Tap a bar for that day's numbers; today is selected at first. */
 @Composable
-private fun DailyChartCard(days: List<DayUsage>, tracked: List<TrackedApp>) {
+private fun DailyChartCard(days: List<DayUsage>, tracked: List<TrackedApp>, removed: Set<String>) {
     var selected by remember(days) { mutableIntStateOf(days.lastIndex) }
-    val colors = tracked.map { slotColor(it.slot) }
+    val removedColor = MaterialTheme.colorScheme.outline
+    // Removed apps share one grey series, drawn last so the chosen apps' colours never move.
+    val series: List<Pair<Color, (DayUsage) -> Long>> =
+        tracked.map { app -> slotColor(app.slot) to { d: DayUsage -> d.msByPackage[app.packageName] ?: 0L } } +
+            if (removed.isEmpty()) emptyList() else listOf(removedColor to { d: DayUsage -> removed.sumOf { d.msByPackage[it] ?: 0L } })
     val grid = MaterialTheme.colorScheme.outlineVariant
     val surface = MaterialTheme.colorScheme.surfaceContainerHigh
     val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
@@ -199,7 +267,7 @@ private fun DailyChartCard(days: List<DayUsage>, tracked: List<TrackedApp>) {
 
     InsightCard {
         Text("Time per day", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-        Legend(tracked)
+        Legend(tracked, showRemoved = removed.isNotEmpty())
         Row(modifier = Modifier.padding(top = 12.dp)) {
             // Recessive y-axis: just the top value, aligned with the top gridline.
             Box(modifier = Modifier.height(160.dp).padding(end = 6.dp)) {
@@ -226,7 +294,7 @@ private fun DailyChartCard(days: List<DayUsage>, tracked: List<TrackedApp>) {
                     val left = i * slot + (slot - barWidth) / 2f
                     if (i == selected) drawRect(highlight, Offset(i * slot, 0f), Size(slot, size.height))
                     var top = size.height
-                    val segments = tracked.mapIndexed { s, app -> colors[s] to (day.msByPackage[app.packageName] ?: 0L) }.filter { it.second > 0 }
+                    val segments = series.map { (color, ms) -> color to ms(day) }.filter { it.second > 0 }
                     segments.forEachIndexed { s, (color, ms) ->
                         val h = size.height * ms / maxMs
                         val isTop = s == segments.lastIndex
@@ -275,6 +343,14 @@ private fun DailyChartCard(days: List<DayUsage>, tracked: List<TrackedApp>) {
                     Text(formatUsage(day.msByPackage[app.packageName] ?: 0L), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            val removedMs = removed.sumOf { day.msByPackage[it] ?: 0L }
+            if (removedMs > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                    Box(Modifier.size(8.dp).background(removedColor, CircleShape))
+                    Text("Removed apps", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                    Text(formatUsage(removedMs), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }
@@ -282,7 +358,7 @@ private fun DailyChartCard(days: List<DayUsage>, tracked: List<TrackedApp>) {
 /** Always shown for the stacked chart, and wraps onto more lines as apps are added. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Legend(tracked: List<TrackedApp>) {
+private fun Legend(tracked: List<TrackedApp>, showRemoved: Boolean) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -292,6 +368,12 @@ private fun Legend(tracked: List<TrackedApp>) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(10.dp).background(slotColor(app.slot), RoundedCornerShape(3.dp)))
                 Text(rememberAppLabel(app.packageName), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
+            }
+        }
+        if (showRemoved) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).background(MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp)))
+                Text("Removed apps", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
             }
         }
     }

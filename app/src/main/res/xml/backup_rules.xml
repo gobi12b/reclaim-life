@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Auto Backup on Android 11 and lower. Only the two DataStore files (settings: nickname, limit,
-     pause; reel_usage: today's count and day history) are backed up. Glance's widget state isn't,
-     since widget IDs don't carry over to a new device, and the pause recording lives in cacheDir,
-     which Android never backs up. Keep in sync with data_extraction_rules.xml and PRIVACY.md. -->
+<!-- Auto Backup on Android 11 and lower. Only three DataStore files (settings: nickname, limits,
+     pause, baseline; reel_usage: today's counts, day history, pause log; daily_usage: per-app
+     minutes per day) are backed up. Glance's widget state isn't, since widget IDs don't carry over
+     to a new device, and neither is pause_intention: a typed intention never leaves the phone.
+     Keep in sync with data_extraction_rules.xml and PRIVACY.md. -->
 <full-backup-content>
     <include domain="file" path="datastore/settings.preferences_pb" />
     <include domain="file" path="datastore/reel_usage.preferences_pb" />
+        <include domain="file" path="datastore/daily_usage.preferences_pb" />
 </full-backup-content>

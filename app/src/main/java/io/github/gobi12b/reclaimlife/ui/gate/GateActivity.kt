@@ -78,7 +78,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.gobi12b.reclaimlife.ReclaimLifeApp
+import io.github.gobi12b.reclaimlife.data.DEFAULT_GATE_WAIT_MS
 import io.github.gobi12b.reclaimlife.data.TargetApps
+import androidx.compose.runtime.collectAsState
 import io.github.gobi12b.reclaimlife.data.formatUsage
 import io.github.gobi12b.reclaimlife.data.usageMsInWindow
 import io.github.gobi12b.reclaimlife.ui.common.OwnScreens
@@ -117,10 +119,14 @@ class GateActivity : ComponentActivity() {
                             )
                     }
                 }
+                val reelsByApp by app.reelUsageRepository.todayCountsByApp.collectAsState(initial = emptyMap())
                 BackHandler { skip() }
                 GateContent(
                     appLabel = targetPackage?.let { appLabel(this@GateActivity, it) } ?: "this app",
                     usage = usage,
+                    // Reels are only counted in some apps; others show their time alone.
+                    reelsToday = targetPackage?.takeIf { TargetApps.countsReels(it) }?.let { reelsByApp[it] ?: 0 },
+                    waitMs = intent.getLongExtra(EXTRA_WAIT_MS, DEFAULT_GATE_WAIT_MS),
                     onSkip = { skip() },
                     onContinue = {
                         OwnScreens.recordGateDecision(targetPackage)
@@ -163,8 +169,8 @@ class GateActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_TARGET_PACKAGE = "target_package"
-        /** The quiet moment before the choice appears. */
-        const val PAUSE_MS = 2_000L
+        /** The quiet moment before the choice appears — 2, 5 or 10 seconds, set in Settings. */
+        const val EXTRA_WAIT_MS = "wait_ms"
     }
 }
 
@@ -189,7 +195,14 @@ private const val PROMPT_HOLD_MS = 2600L
 private data class GateUsage(val ms: Long, val fromSystem: Boolean)
 
 @Composable
-private fun GateContent(appLabel: String, usage: GateUsage?, onSkip: () -> Unit, onContinue: () -> Unit) {
+private fun GateContent(
+    appLabel: String,
+    usage: GateUsage?,
+    reelsToday: Int?,
+    waitMs: Long,
+    onSkip: () -> Unit,
+    onContinue: () -> Unit
+) {
     // A shuffled run of prompts, each moving in after the last, for as long as the screen is open.
     val prompts = remember { RELAX_PROMPTS.shuffled() }
     var promptIndex by remember { mutableIntStateOf(0) }
@@ -201,7 +214,7 @@ private fun GateContent(appLabel: String, usage: GateUsage?, onSkip: () -> Unit,
     }
     var pauseDone by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        delay(GateActivity.PAUSE_MS)
+        delay(waitMs)
         pauseDone = true
     }
 
@@ -223,7 +236,7 @@ private fun GateContent(appLabel: String, usage: GateUsage?, onSkip: () -> Unit,
                 visible = usage != null,
                 enter = fadeIn(tween(800)) + slideInVertically(tween(900, easing = LinearOutSlowInEasing)) { -it / 3 }
             ) {
-                usage?.let { UsageStats(appLabel = appLabel, usage = it) }
+                usage?.let { UsageStats(appLabel = appLabel, usage = it, reelsToday = reelsToday) }
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 16.dp)) {
@@ -288,7 +301,7 @@ private fun GateContent(appLabel: String, usage: GateUsage?, onSkip: () -> Unit,
  * can be taken back, not as a telling-off. The numbers count up as they arrive.
  */
 @Composable
-private fun UsageStats(appLabel: String, usage: GateUsage) {
+private fun UsageStats(appLabel: String, usage: GateUsage, reelsToday: Int?) {
     val countUp = remember { Animatable(0f) }
     LaunchedEffect(usage.ms) { countUp.animateTo(1f, tween(1400, easing = FastOutSlowInEasing)) }
     val shownMs = (usage.ms * countUp.value).toLong()
@@ -318,6 +331,13 @@ private fun UsageStats(appLabel: String, usage: GateUsage) {
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(top = 4.dp)
             )
+            if (reelsToday != null) {
+                Text(
+                    text = if (reelsToday == 1) "1 reel today" else "$reelsToday reels today",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (meaningful) {
                 Text(
                     text = "At this pace, that's",
@@ -415,9 +435,9 @@ private fun CalmBackground() {
     }
 }
 
-/** The sprout, swaying a little like it's in a breeze, with ripples spreading out slowly behind it. */
+/** The sprout, swaying a little like it's in a breeze, with ripples spreading out slowly behind it. Also the pause's calm screen. */
 @Composable
-private fun SwayingSprout() {
+internal fun SwayingSprout() {
     val ripple = MaterialTheme.colorScheme.primary
     val transition = rememberInfiniteTransition(label = "sprout")
     val sway by transition.animateFloat(

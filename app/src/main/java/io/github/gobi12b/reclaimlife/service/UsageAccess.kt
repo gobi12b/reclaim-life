@@ -63,6 +63,20 @@ fun systemStretches(context: Context, packages: Set<String>, sinceMs: Long, nowM
 }
 
 /**
+ * The oldest moment Android's usage record still covers, at or after [sinceMs] — how many days of
+ * history a baseline can be read from. Phones keep a limited number of days, and a new phone has
+ * few. Null without usage access or with no record at all.
+ */
+fun earliestUsageEventMs(context: Context, sinceMs: Long, nowMs: Long): Long? {
+    if (!hasUsageAccess(context)) return null
+    val manager = context.getSystemService(UsageStatsManager::class.java) ?: return null
+    val usageEvents = runCatching { manager.queryEvents(sinceMs, nowMs) }.getOrNull() ?: return null
+    val event = UsageEvents.Event()
+    // Events come oldest first, so the first one is all that's needed.
+    return if (usageEvents.hasNextEvent() && usageEvents.getNextEvent(event)) event.timeStamp else null
+}
+
+/**
  * Time in [packages] since [sinceMs]: Android's record when Usage access is allowed, otherwise
  * ReclaimLife's own [spans]. The Boolean says which it was.
  */

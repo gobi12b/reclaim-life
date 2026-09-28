@@ -39,20 +39,25 @@ launcher icon. The list is only shown in that picker; only the apps you choose a
 ## Usage access (optional)
 
 The pause screen, Home and Insights show how long you've spent in your watched apps (the last 24
-hours, and the last week). If you allow Usage access (Settings → Usage access), ReclaimLife reads
+hours, and the last week), and Home shows the time you've won back against your usual daily time
+before ReclaimLife, read once from the last 14 days. If you allow Usage access (Settings → Usage access), ReclaimLife reads
 Android's own record of when those apps were in front, so the figures are complete. It only looks
-up the apps you chose, keeps nothing from that record, and works it out fresh each time. Without Usage access it uses its own timing instead (below). You can turn it off
+up the apps you chose, keeps only per-app daily totals (below) and your usual daily minutes per app, and otherwise works
+it out fresh each time. Without Usage access it uses its own timing instead (below) and shows no
+time-saved figures. You can turn it off
 at any time in the same setting.
 
-## Microphone (pause tracking)
+## Pausing tracking
 
-To pause tracking, ReclaimLife asks you to record yourself saying a phrase and play it back. The
-microphone permission is requested only when you tap "Start recording".
+ReclaimLife does not use the microphone. Pausing asks for a reason (one tap: Work or study,
+Relaxing on purpose, With friends, Other), which is kept with the pause for 90 days. A pause for
+the rest of the day also asks you to type a short plan. That text is shown on Home while the pause
+runs and is deleted when it ends; it is never kept with the pause or included in backups. Older
+versions recorded a spoken phrase; any leftover recording is deleted the first time this version
+starts.
 
-- The recording is saved only in the app's private cache folder on your phone.
-- It is deleted when the pause dialog closes. If the app is closed unexpectedly while the dialog
-  is open, the leftover file is deleted the next time the app starts.
-- It is never uploaded, shared, transcribed or analysed. It is just played back to you.
+If notifications are already allowed, a one-minute heads-up with Cancel is shown before a
+rest-of-today pause starts. ReclaimLife never asks for the notification permission.
 
 ## Physical activity (step counter)
 
@@ -71,7 +76,13 @@ ReclaimLife stores the following in its private app storage:
   you stayed within your limit (plus totals of those days);
 - which apps you chose to watch;
 - when those apps were in front (start and end times only), deleted after about a week;
-- whether you chose Skip or Continue on the pause screen, and when, deleted after about a week.
+- minutes and reels per watched app per day, kept for up to 400 days, for the monthly, yearly and
+  "since you started" figures;
+- your usual daily minutes per app from before ReclaimLife (your baseline);
+- when tracking was off (the counter switched off or the phone off), deleted after two weeks;
+- your pauses (start, end, length and reason), deleted after 90 days;
+- whether you chose Skip or Continue on the pause screen, and when, deleted after about a week;
+- your Pause before opening choices and when your day starts.
 
 The home-screen widget shows the same count and limit. Uninstalling the app, or clearing its
 storage in Settings → Apps → ReclaimLife, deletes all of it.
@@ -79,8 +90,8 @@ storage in Settings → Apps → ReclaimLife, deletes all of it.
 ## Android backup
 
 ReclaimLife uses Android's Auto Backup so your settings and history survive a new phone. Only
-the two settings/history files listed above are included. The pause recording and widget state
-are not. If backup is turned on for your Google account, Android saves these files to your
+the settings, usage and daily-usage files described above are included. The typed pause plan and
+widget state are not. If backup is turned on for your Google account, Android saves these files to your
 Google account's backup storage (or copies them during a device-to-device transfer), under
 Google's terms. ReclaimLife itself does not send them anywhere. You can turn this off in your
 phone's backup settings.

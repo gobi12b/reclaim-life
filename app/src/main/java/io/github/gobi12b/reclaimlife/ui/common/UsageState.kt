@@ -2,6 +2,11 @@ package io.github.gobi12b.reclaimlife.ui.common
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import io.github.gobi12b.reclaimlife.service.Progress
+import io.github.gobi12b.reclaimlife.service.computeProgress
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -68,6 +73,39 @@ fun rememberUsage(days: Int, packages: Set<String>): LoadedUsage? {
         }
     }
     return usage
+}
+
+/**
+ * Time won back ([Progress]) — the same calculation the widget uses. Recomputed on every resume,
+ * once a minute, and whenever one of [keys] changes (a new reel, a pause). The last value stays
+ * while the next is worked out, so the card doesn't flash; null only before the first.
+ */
+@Composable
+fun rememberProgress(vararg keys: Any?): Progress? {
+    val app = LocalContext.current.applicationContext as ReclaimLifeApp
+    val resumes = rememberResumeCount()
+    var minute by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            minute++
+        }
+    }
+    var progress by remember { mutableStateOf<Progress?>(null) }
+    LaunchedEffect(resumes, minute, *keys) { progress = computeProgress(app) }
+    return progress
+}
+
+@Composable
+private fun rememberResumeCount(): Int {
+    var resumes by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) resumes++ }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return resumes
 }
 
 /** The apps the user chose to watch, in slot (colour) order. */

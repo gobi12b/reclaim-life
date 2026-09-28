@@ -29,6 +29,27 @@ class TrackedAppsTest {
     }
 
     @Test
+    fun onboardingPreselectsOnlyInstalledReelApps() {
+        // Spec: Instagram and TikTok installed, YouTube not → only Instagram is checked.
+        assertEquals(
+            listOf(TrackedApp(TargetApps.INSTAGRAM, 0)),
+            preselectedApps(setOf(TargetApps.INSTAGRAM, "com.zhiliaoapp.musically"))
+        )
+        assertEquals(emptyList<TrackedApp>(), preselectedApps(setOf("com.reddit.frontpage")))
+    }
+
+    @Test
+    fun aRowWithTwoPackagesTogglesBoth() {
+        val tiktok = listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
+        val on = toggleTrackedApps(DEFAULT_TRACKED_APPS, tiktok)
+        assertEquals(4, on.size)
+        assertEquals(DEFAULT_TRACKED_APPS, toggleTrackedApps(on, tiktok))
+        var seven = emptyList<TrackedApp>()
+        repeat(MAX_TRACKED_APPS - 1) { seven = toggleTrackedApp(seven, "app.$it") }
+        assertEquals(seven, toggleTrackedApps(seven, tiktok)) // would pass the maximum
+    }
+
+    @Test
     fun roundTripsAndDropsBadEntries() {
         val apps = listOf(TrackedApp("a.b", 0), TrackedApp("c.d", 3))
         assertEquals(apps, parseTrackedApps(serializeTrackedApps(apps)))

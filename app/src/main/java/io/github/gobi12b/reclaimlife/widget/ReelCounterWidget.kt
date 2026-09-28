@@ -33,7 +33,9 @@ import io.github.gobi12b.reclaimlife.data.DEFAULT_DAILY_REEL_LIMIT
 import io.github.gobi12b.reclaimlife.data.DEFAULT_HOURLY_REEL_LIMIT
 import io.github.gobi12b.reclaimlife.data.LimitMode
 import io.github.gobi12b.reclaimlife.data.Mood
-import io.github.gobi12b.reclaimlife.data.reelsInWindow
+import io.github.gobi12b.reclaimlife.data.formatSaved
+import io.github.gobi12b.reclaimlife.data.limitStatus
+import io.github.gobi12b.reclaimlife.service.computeProgress
 import io.github.gobi12b.reclaimlife.service.isReelBlockerServiceRunning
 import java.text.DateFormat
 import java.util.Date
@@ -45,11 +47,15 @@ private val WidgetWarning = Color(0xFFFFB4AB)
 
 class ReelCounterWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent { Content(context) }
+        // The same calculation as Home, refreshed whenever the widget is — so the numbers agree.
+        val app = context.applicationContext as ReclaimLifeApp
+        val progress = runCatching { computeProgress(app) }.getOrNull()
+        val savedLine = progress?.takeIf { it.hasBaseline }?.let { "${formatSaved(it.today.totalMs)} saved today" }
+        provideContent { Content(context, savedLine) }
     }
 
     @Composable
-    private fun Content(context: Context) {
+    private fun Content(context: Context, savedLine: String?) {
         val app = context.applicationContext as ReclaimLifeApp
         val dailyLimit by app.settingsRepository.dailyReelLimit.collectAsState(initial = DEFAULT_DAILY_REEL_LIMIT)
         val todayCount by app.reelUsageRepository.todayCount.collectAsState(initial = 0)
@@ -58,25 +64,26 @@ class ReelCounterWidget : GlanceAppWidget() {
         val limitMode by app.settingsRepository.limitMode.collectAsState(initial = LimitMode.DAILY)
         val hourlyLimit by app.settingsRepository.hourlyReelLimit.collectAsState(initial = DEFAULT_HOURLY_REEL_LIMIT)
         val recentReelTimes by app.reelUsageRepository.recentReelTimes.collectAsState(initial = emptyList())
-        val effectiveLimit = dailyLimit + extraAllowance
-        // Hourly-only has no daily number to show against; it shows this hour instead. Like the
-        // pause, it only moves when the widget re-renders (on each count, or its 30-min period).
-        val hourlyOnly = !limitMode.usesDaily
-        val thisHour = reelsInWindow(recentReelTimes, System.currentTimeMillis()).size
-        val mood = if (hourlyOnly) Mood.forProgress(thisHour, hourlyLimit) else Mood.forProgress(todayCount, effectiveLimit)
+        val pausedFromMs by app.settingsRepository.pausedFromMs.collectAsState(initial = 0L)
+        // Reels left leads — the same figure as the Limits screen and the block screen. Hourly-only
+        // has no daily number, so it shows this hour instead. Like the pause, it only moves when the
+        // widget re-renders (on each count, or its 30-min period).
+        val status = limitStatus(limitMode, dailyLimit, extraAllowance, todayCount, hourlyLimit, recentReelTimes, System.currentTimeMillis())
+        val hourlyOnly = status.hourlyOnly
+        val mood = Mood.forProgress(status.used, status.total)
         // Glance can't tick a countdown, so a pause shows its end time; the service refreshes the
         // widget when the pause runs out. Service state is read at render time — the widget is
         // re-rendered on every count change and on its 30-min period, so a dead counter shows up
         // here within that window instead of the widget looking like it's still tracking.
-        val paused = System.currentTimeMillis() < pausedUntilMs
+        val paused = System.currentTimeMillis().let { it >= pausedFromMs && it < pausedUntilMs }
         val serviceRunning = isReelBlockerServiceRunning(context)
-        val headline = if (hourlyOnly) "${mood.emoji} $thisHour / $hourlyLimit" else "${mood.emoji} $todayCount / $effectiveLimit"
+        val headline = "${mood.emoji} ${status.left} left"
         val subline = when {
             paused -> "paused until " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(pausedUntilMs))
             !serviceRunning -> "not counting — tap to fix"
-            hourlyOnly -> "this hour · $todayCount today"
-            extraAllowance > 0 -> "reels today · +$extraAllowance extra"
-            else -> "reels today"
+            hourlyOnly -> "${status.used} / ${status.total} this hour · $todayCount today"
+            extraAllowance > 0 -> "${status.used} / ${status.total} today · +$extraAllowance extra"
+            else -> "${status.used} / ${status.total} reels today"
         }
         val sublineColor = if (paused || !serviceRunning) WidgetWarning else WidgetSubtext
 
@@ -102,6 +109,9 @@ class ReelCounterWidget : GlanceAppWidget() {
                         text = subline,
                         style = TextStyle(fontSize = 11.sp, color = ColorProvider(sublineColor))
                     )
+                    if (savedLine != null) {
+                        Text(text = savedLine, style = TextStyle(fontSize = 11.sp, color = ColorProvider(WidgetSubtext)))
+                    }
                 }
             }
         }

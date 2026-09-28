@@ -7,6 +7,7 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -16,7 +17,9 @@ import io.github.gobi12b.reclaimlife.ReclaimLifeApp
 import io.github.gobi12b.reclaimlife.R
 import io.github.gobi12b.reclaimlife.data.LimitMode
 import io.github.gobi12b.reclaimlife.data.Mood
+import io.github.gobi12b.reclaimlife.data.DEFAULT_GATE_WAIT_MS
 import io.github.gobi12b.reclaimlife.data.DEFAULT_TRACKED_APPS
+import io.github.gobi12b.reclaimlife.data.PauseDuration
 import io.github.gobi12b.reclaimlife.data.TargetApps
 import io.github.gobi12b.reclaimlife.data.formatPauseRemaining
 import io.github.gobi12b.reclaimlife.data.hourlyUnblockAt
@@ -30,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -54,9 +58,17 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
     private var dailyLimit: Int = Int.MAX_VALUE
     private var todayCount: Int = 0
     private var extraAllowance: Int = 0
+    private var pausedFromMs: Long = 0L
     private var pausedUntilMs: Long = 0L
-    /** Read at every event rather than cached, so a pause ends on time without anything writing to storage. */
-    private val trackingPaused: Boolean get() = System.currentTimeMillis() < pausedUntilMs
+    private var pauseKind: PauseDuration? = null
+    /**
+     * Read at every event rather than cached, so a pause starts and ends on time without anything
+     * writing to storage (Rest of today starts a minute after it's confirmed).
+     */
+    private val trackingPaused: Boolean get() = System.currentTimeMillis().let { it >= pausedFromMs && it < pausedUntilMs }
+    private var gateEnabled: Boolean = true
+    private var gateDisabledApps: Set<String> = emptySet()
+    private var gateWaitMs: Long = DEFAULT_GATE_WAIT_MS
     private val effectiveLimit: Int get() = dailyLimit + extraAllowance
     private var limitMode: LimitMode = LimitMode.DAILY
     /** The apps the user chose: they get the open-pause and their time is tracked. */
@@ -93,10 +105,28 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         overlayView?.visibility = View.GONE
         pageTracker.reset()
     }
-    /** Fires when a pause runs out, so the badge/widget flip back to counting without waiting for an event. */
-    private val pauseEndedRunnable = Runnable {
+    /**
+     * Fires when a pause starts or runs out, so the badge/widget flip without waiting for an
+     * event — and a finished Rest of today's intention is deleted right away.
+     */
+    private val pauseEdgeRunnable = Runnable {
         refreshOverlayText()
-        serviceScope.launch { refreshReelWidget(this@ReelBlockerAccessibilityService) }
+        startPauseTickIfNeeded()
+        serviceScope.launch {
+            app.pauseController.clearExpired()
+            refreshReelWidget(this@ReelBlockerAccessibilityService)
+        }
+    }
+    /** A sign of life every few minutes, so a reboot's gap can be told apart from a quiet phone. */
+    private val heartbeatRunnable = object : Runnable {
+        override fun run() {
+            serviceScope.launch {
+                app.reelUsageRepository.markServiceAlive(System.currentTimeMillis(), bootTimeMs())
+                // Closes finished days and settles baselines even if ReclaimLife itself isn't opened.
+                runCatching { syncProgressData(app) }
+            }
+            mainHandler.postDelayed(this, HEARTBEAT_MS)
+        }
     }
     /** During an app session, adds up time in front and notices the user has switched away. */
     private val foregroundCheckRunnable = object : Runnable {
@@ -146,6 +176,11 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        serviceScope.launch {
+            app.reelUsageRepository.markServiceConnected(System.currentTimeMillis(), bootTimeMs())
+            mainHandler.removeCallbacks(heartbeatRunnable)
+            mainHandler.postDelayed(heartbeatRunnable, HEARTBEAT_MS)
+        }
         serviceScope.launch {
             val limit = app.settingsRepository.dailyReelLimit.first()
             val mode = app.settingsRepository.limitMode.first()
@@ -203,17 +238,37 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
             }
         }
         serviceScope.launch {
-            app.settingsRepository.pausedUntilMs.collectLatest {
-                pausedUntilMs = it
-                mainHandler.removeCallbacks(pauseEndedRunnable)
-                val remaining = it - System.currentTimeMillis()
-                if (remaining > 0) mainHandler.postDelayed(pauseEndedRunnable, remaining)
+            combine(
+                app.settingsRepository.pausedFromMs,
+                app.settingsRepository.pausedUntilMs,
+                app.settingsRepository.pauseKind
+            ) { from, until, kind -> Triple(from, until, kind) }.collectLatest { (from, until, kind) ->
+                pausedFromMs = from
+                pausedUntilMs = until
+                pauseKind = kind
+                mainHandler.removeCallbacks(pauseEdgeRunnable)
+                val now = System.currentTimeMillis()
+                // The next edge: the delayed start of Rest of today, or the end.
+                val nextEdge = listOf(from, until).filter { it > now }.minOrNull()
+                if (nextEdge != null) mainHandler.postDelayed(pauseEdgeRunnable, nextEdge - now)
                 refreshOverlayText()
                 startPauseTickIfNeeded()
                 refreshReelWidget(this@ReelBlockerAccessibilityService)
             }
         }
+        serviceScope.launch { app.settingsRepository.gateEnabled.collectLatest { gateEnabled = it } }
+        serviceScope.launch { app.settingsRepository.gateDisabledApps.collectLatest { gateDisabledApps = it } }
+        serviceScope.launch { app.settingsRepository.gateWaitMs.collectLatest { gateWaitMs = it } }
     }
+
+    /** Switched off by the user: tracking is off until it's back (a crash never gets here). */
+    override fun onUnbind(intent: Intent?): Boolean {
+        app.appScope.launch { app.reelUsageRepository.markServiceDisconnected(System.currentTimeMillis()) }
+        return super.onUnbind(intent)
+    }
+
+    /** Wall-clock time of the last boot, to notice the phone was off between two signs of life. */
+    private fun bootTimeMs(): Long = System.currentTimeMillis() - SystemClock.elapsedRealtime()
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString()
@@ -257,7 +312,7 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
             } else {
                 0
             }
-            if (reels > 0) registerReels(reels)
+            if (reels > 0) registerReels(packageName, reels)
         }
     }
 
@@ -272,8 +327,12 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         awaySinceMs = 0L
         mainHandler.postDelayed(foregroundCheckRunnable, FOREGROUND_CHECK_MS)
 
-        // Every open gets the gate, unless the block screen is about to take over. A pause stops
-        // counting and blocking, but the gate still shows — it's a moment to breathe, not a limit.
+        // Pause before opening is the user's choice: the main switch, then each app's own. It
+        // also steps aside when the block screen is about to take over. A 15 min or 1 hour pause
+        // stops counting and blocking, but the gate still shows — it's a breath, not a limit.
+        // Rest of today is different: movie night shouldn't be interrupted on every open.
+        if (!gateEnabled || target in gateDisabledApps) return false
+        if (trackingPaused && pauseKind == PauseDuration.REST_OF_TODAY) return false
         val blocked = !trackingPaused && TargetApps.countsReels(target) &&
             (dailyLimitReached || hourlyUnblockAt(recentReelTimes, enforcedHourlyLimit, now) != null)
         if (blocked) return false
@@ -289,6 +348,7 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         startActivity(Intent(this, GateActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(GateActivity.EXTRA_TARGET_PACKAGE, target)
+            putExtra(GateActivity.EXTRA_WAIT_MS, gateWaitMs)
         })
     }
 
@@ -356,9 +416,9 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         return ids
     }
 
-    private fun registerReels(reels: Int) {
+    private fun registerReels(packageName: String, reels: Int) {
         serviceScope.launch {
-            val newCount = app.reelUsageRepository.incrementAndGet(reels)
+            val newCount = app.reelUsageRepository.incrementAndGet(packageName, reels)
             todayCount = newCount
             // The stored times arrive via the flow shortly; mirror them now so the block is immediate.
             val now = System.currentTimeMillis()
@@ -472,7 +532,8 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         mainHandler.removeCallbacks(leaveSessionRunnable)
-        mainHandler.removeCallbacks(pauseEndedRunnable)
+        mainHandler.removeCallbacks(pauseEdgeRunnable)
+        mainHandler.removeCallbacks(heartbeatRunnable)
         mainHandler.removeCallbacks(pauseTickRunnable)
         mainHandler.removeCallbacks(foregroundCheckRunnable)
         overlayView?.let { runCatching { windowManager.removeView(it) } }
@@ -490,6 +551,7 @@ class ReelBlockerAccessibilityService : AccessibilityService() {
         /** Don't relaunch the gate faster than it can come up. */
         private const val GATE_RESHOW_MS = 1000L
         private const val USAGE_FLUSH_MS = 60_000L
+        private const val HEARTBEAT_MS = 5 * 60_000L
         private const val ID_CHAIN_DEPTH = 3
     }
 }

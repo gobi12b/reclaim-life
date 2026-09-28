@@ -4,8 +4,9 @@
 
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Only used if already granted: the one-minute heads-up before Rest of today starts.
+         ReclaimLife never asks for it. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Optional: Android's per-app screen time, for the gate's "last 24 hours" figure. -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
@@ -13,12 +14,25 @@
          The app has no internet access, so it shouldn't list network permissions either. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
-    <!-- The app picker lists launchable apps so the user can choose which ones to watch. -->
+    <!-- The app picker lists launchable apps so the user can choose which ones to watch ("Other
+         apps"); the suggested apps are named too, so onboarding finds them even without a launcher
+         entry. Keep in sync with SUGGESTED_APPS. No QUERY_ALL_PACKAGES needed. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <package android:name="com.instagram.android" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.zhiliaoapp.musically" />
+        <package android:name="com.ss.android.ugc.trill" />
+        <package android:name="com.snapchat.android" />
+        <package android:name="com.twitter.android" />
+        <package android:name="com.reddit.frontpage" />
+        <package android:name="com.instagram.barcelona" />
+        <package android:name="com.pinterest" />
+        <package android:name="com.linkedin.android" />
     </queries>
 
     <application
@@ -70,6 +84,10 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/reel_widget_info" />
         </receiver>
+
+        <receiver
+            android:name=".service.PauseCancelReceiver"
+            android:exported="false" />
 
         <service
             android:name=".service.ReelBlockerAccessibilityService"

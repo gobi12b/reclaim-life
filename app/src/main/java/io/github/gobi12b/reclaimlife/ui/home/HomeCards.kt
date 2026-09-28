@@ -1,5 +1,6 @@
 package io.github.gobi12b.reclaimlife.ui.home
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,28 +10,27 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,44 +38,53 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.gobi12b.reclaimlife.data.DayOutcome
-import io.github.gobi12b.reclaimlife.data.FlashcardDeck
+import io.github.gobi12b.reclaimlife.data.EARLIER_TODAY_KEY
 import io.github.gobi12b.reclaimlife.data.HOURLY_BREAKS_WITHIN_LIMIT
-import io.github.gobi12b.reclaimlife.data.LimitMode
-import io.github.gobi12b.reclaimlife.data.MAX_DAILY_REEL_LIMIT
-import io.github.gobi12b.reclaimlife.data.Mood
-import io.github.gobi12b.reclaimlife.data.ReplacementActivity
+import io.github.gobi12b.reclaimlife.data.HomeInsight
+import io.github.gobi12b.reclaimlife.data.InsightAction
 import io.github.gobi12b.reclaimlife.data.TrackedApp
 import io.github.gobi12b.reclaimlife.data.currentStreak
 import io.github.gobi12b.reclaimlife.data.formatPauseRemaining
 import io.github.gobi12b.reclaimlife.data.formatProjection
+import io.github.gobi12b.reclaimlife.data.formatSaved
 import io.github.gobi12b.reclaimlife.data.formatUsage
+import io.github.gobi12b.reclaimlife.data.formatYearProjection
 import io.github.gobi12b.reclaimlife.data.lastDays
+import io.github.gobi12b.reclaimlife.service.Progress
 import io.github.gobi12b.reclaimlife.service.usageAccessSettingsIntent
-import io.github.gobi12b.reclaimlife.ui.common.LoadedUsage
 import io.github.gobi12b.reclaimlife.ui.common.SproutBadge
 import io.github.gobi12b.reclaimlife.ui.common.rememberAppLabel
 import io.github.gobi12b.reclaimlife.ui.common.slotColor
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
+import kotlin.math.abs
 
 /** Section label between groups of cards: small caps-style, quiet. */
 @Composable
@@ -93,12 +102,12 @@ internal fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * The logo, a time-of-day greeting, and Pause. Pause sits here so it's easy to find, but as a
- * small tonal button rather than a headline action — and it still goes through the recording
- * confirm. Hidden while paused, when the banner below offers Resume instead.
+ * The logo, a time-of-day greeting, Pause and Settings. Pause sits here so it's easy to find, but
+ * as a small tonal button rather than a headline action — and it goes through the pause sheet's
+ * friction. Hidden while paused, when the banner below offers Resume instead.
  */
 @Composable
-internal fun HomeHeader(name: String, nowMs: Long, showPause: Boolean, onPause: () -> Unit) {
+internal fun HomeHeader(name: String, nowMs: Long, showPause: Boolean, onPause: () -> Unit, onSettings: () -> Unit) {
     val hour = remember(nowMs / 3_600_000L) { Calendar.getInstance().apply { timeInMillis = nowMs }.get(Calendar.HOUR_OF_DAY) }
     val greeting = when (hour) {
         in 5..11 -> "Good morning"
@@ -126,12 +135,41 @@ internal fun HomeHeader(name: String, nowMs: Long, showPause: Boolean, onPause: 
                 Text("Pause", fontSize = 14.sp, modifier = Modifier.padding(start = 6.dp))
             }
         }
+        IconButton(onClick = onSettings, modifier = Modifier.semantics { contentDescription = "Settings" }) {
+            GearIcon(MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
-/** Gold, not grey: a pause is a state to notice, and "Resume" is the one thing to do about it. */
+/** A drawn gear, so the app still needs no icon library. */
 @Composable
-internal fun PausedBanner(remainingMs: Long, resumesAtMs: Long, onResume: () -> Unit) {
+private fun GearIcon(color: Color) {
+    Canvas(modifier = Modifier.size(24.dp)) {
+        val c = Offset(size.width / 2, size.height / 2)
+        val stroke = 2.dp.toPx()
+        drawCircle(color, radius = size.width * 0.28f, center = c, style = Stroke(stroke))
+        drawCircle(color, radius = size.width * 0.1f, center = c, style = Stroke(stroke))
+        repeat(8) { i ->
+            val angle = Math.toRadians(i * 45.0)
+            val inner = size.width * 0.3f
+            val outer = size.width * 0.44f
+            drawLine(
+                color,
+                Offset(c.x + inner * kotlin.math.cos(angle).toFloat(), c.y + inner * kotlin.math.sin(angle).toFloat()),
+                Offset(c.x + outer * kotlin.math.cos(angle).toFloat(), c.y + outer * kotlin.math.sin(angle).toFloat()),
+                strokeWidth = stroke * 1.6f,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
+/**
+ * Gold, not grey: a pause is a state to notice, and "Resume now" is the one thing to do about it.
+ * Rest of today shows its intention: "Enjoy: Movie night with friends · back at 00:00".
+ */
+@Composable
+internal fun PausedBanner(remainingMs: Long, resumesAtMs: Long, intention: String?, onResume: () -> Unit) {
     val resumesAt = remember(resumesAtMs) { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(resumesAtMs)) }
     Card(
         colors = CardDefaults.cardColors(
@@ -151,7 +189,11 @@ internal fun PausedBanner(remainingMs: Long, resumesAtMs: Long, onResume: () -> 
                     modifier = Modifier.semantics { heading() }
                 )
                 Text(
-                    text = "Reels aren't counted or blocked. Back on by itself at $resumesAt.",
+                    text = if (intention.isNullOrBlank()) {
+                        "Reels aren't counted or blocked. Back on by itself at $resumesAt."
+                    } else {
+                        "Enjoy: $intention · back at $resumesAt"
+                    },
                     fontSize = 13.sp
                 )
             }
@@ -161,7 +203,43 @@ internal fun PausedBanner(remainingMs: Long, resumesAtMs: Long, onResume: () -> 
                     containerColor = MaterialTheme.colorScheme.onTertiaryContainer,
                     contentColor = MaterialTheme.colorScheme.tertiaryContainer
                 )
-            ) { Text("Resume") }
+            ) { Text("Resume now") }
+        }
+    }
+}
+
+/** Rest of today's one-minute delayed start, cancellable until it runs out. */
+@Composable
+internal fun PendingPauseCard(startsInMs: Long, intention: String?, onCancel: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+        ),
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
+            PauseGlyph()
+            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(
+                    text = "Rest of today starts in ${formatPauseRemaining(startsInMs)}",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.semantics { heading() }
+                )
+                Text(
+                    text = if (intention.isNullOrBlank()) "Changed your mind? Cancel keeps tracking on." else "Enjoy: $intention",
+                    fontSize = 13.sp
+                )
+            }
+            Button(
+                onClick = onCancel,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.tertiaryContainer
+                )
+            ) { Text("Cancel") }
         }
     }
 }
@@ -176,218 +254,390 @@ private fun PauseGlyph() {
 }
 
 @Composable
-private fun PauseBars(color: androidx.compose.ui.graphics.Color, modifier: Modifier) {
+private fun PauseBars(color: Color, modifier: Modifier) {
     Canvas(modifier = modifier) {
         val w = size.width * 0.22f
         val h = size.height * 0.7f
         val top = (size.height - h) / 2f
-        drawRoundRect(color, Offset(size.width * 0.2f, top), Size(w, h), androidx.compose.ui.geometry.CornerRadius(w / 2))
-        drawRoundRect(color, Offset(size.width * 0.58f, top), Size(w, h), androidx.compose.ui.geometry.CornerRadius(w / 2))
+        drawRoundRect(color, Offset(size.width * 0.2f, top), Size(w, h), CornerRadius(w / 2))
+        drawRoundRect(color, Offset(size.width * 0.58f, top), Size(w, h), CornerRadius(w / 2))
     }
 }
 
+/** For installs from before the apps step: shown once, and dismissing it is permanent. */
+@Composable
+internal fun AppsCheckCard(onOpen: () -> Unit, onDismiss: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 16.dp, end = 4.dp)) {
+            Text(
+                text = "Check which apps ReclaimLife helps with ›",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(role = Role.Button, onClick = onOpen)
+                    .padding(vertical = 16.dp)
+            )
+            TextButton(onClick = onDismiss) { Text("Dismiss") }
+        }
+    }
+}
+
+/** The number to act on, compact: "20 left · 30 of 50 reels today ›". Opens the Limits screen. */
+@Composable
+internal fun LimitsRow(left: String, detail: String, emphasised: Boolean, onOpen: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (emphasised) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = "Open limits", onClick = onOpen)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 18.sp)) { append(left) }
+                    append(" · $detail")
+                },
+                fontSize = 14.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Text("›", fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clearAndSetSemantics { })
+        }
+    }
+}
+
+private fun heroBrush(start: Color, end: Color) = Brush.linearGradient(listOf(start, lerp(start, end, 0.55f)))
+
+/** "Working out your starting point…" while the baseline is read — usually under 2 seconds. */
+@Composable
+internal fun SavedSkeleton() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(heroBrush(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.tertiaryContainer))
+            .padding(20.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite }
+    ) {
+        Text("Working out your starting point…", fontSize = 16.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+    }
+}
+
+/** "42 min" → "42 minutes", "6 h 10 min" → "6 hours 10 minutes", for TalkBack. */
+internal fun spoken(text: String): String =
+    text.replace(Regex("(\\d+) h\\b"), "$1 hours").replace(Regex("(\\d+) min\\b"), "$1 minutes")
+
 /**
- * The one number to act on, as a ring: what's left leads (the ring fills as reels are used), with
- * used/limit, the mood and any extras beside it. Dimmed when paused — the rest of the page isn't.
+ * Home's hero: time won back. It never leads with "0 min saved" — on a zero day it leads with the
+ * running total since the start. Before the waking window it shows yesterday's final figure. One
+ * month figure only; the year lives in the detail sheet (from day 14). Tap for details.
  */
 @Composable
-internal fun HeroCard(
-    title: String,
-    used: Int,
-    limit: Int,
-    headline: String,
-    detail: String,
-    message: String,
-    extraNote: String?,
-    isPaused: Boolean
+internal fun SavedCard(
+    progress: Progress,
+    tracked: List<TrackedApp>,
+    hasUsageAccess: Boolean,
+    onOpenDetails: () -> Unit
 ) {
-    val mood = remember(used, limit) { Mood.forProgress(used, limit) }
-    val start = MaterialTheme.colorScheme.primaryContainer
-    val end = lerp(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.tertiaryContainer, 0.55f)
+    val context = LocalContext.current
     val onColor = MaterialTheme.colorScheme.onPrimaryContainer
-    val progress = if (limit > 0) (used.toFloat() / limit).coerceIn(0f, 1f) else 0f
+    val today = progress.today
+    var showApps by remember { mutableStateOf(false) }
+    val dateFormat = remember { DateFormat.getDateInstance(DateFormat.MEDIUM) }
+
+    val zeroDay = today.totalMs < 60_000L && progress.sinceStartedMs >= 60_000L
+    val headline: String
+    val secondary: String?
+    when {
+        today.beforeWaking && progress.history.yesterdayMs != null -> {
+            headline = "Yesterday you saved ${formatSaved(progress.history.yesterdayMs)}"
+            secondary = null
+        }
+        zeroDay -> {
+            headline = "Since you started: ${formatSaved(progress.sinceStartedMs)}"
+            secondary = "Nothing saved yet today"
+        }
+        else -> {
+            headline = "${formatSaved(today.totalMs)} saved today"
+            secondary = null
+        }
+    }
+    val monthLine = progress.monthMs?.let { "≈ ${formatProjection(it)} a month at this pace" } ?: "Your monthly estimate shows up on day 3"
+    val spokenSummary = buildString {
+        append(spoken(headline)).append(". ")
+        secondary?.let { append(it).append(". ") }
+        progress.monthMs?.let { append("About ${spoken(formatProjection(it))} this month. ") }
+        progress.yearMs?.let { append("About ${spoken(formatProjection(it))} this year.") }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
-            .background(Brush.linearGradient(listOf(start, end)))
-            .alpha(if (isPaused) 0.6f else 1f)
+            .background(heroBrush(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.tertiaryContainer))
+            .clickable(onClickLabel = "Show details", onClick = onOpenDetails)
             .padding(20.dp)
     ) {
         Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ProgressRing(
-                    progress = progress,
-                    track = onColor.copy(alpha = 0.14f),
-                    fill = MaterialTheme.colorScheme.primary,
+            Column(modifier = Modifier.clearAndSetSemantics { contentDescription = spokenSummary }) {
+                Text(
+                    text = if (zeroDay) "Time won back" else "Time won back today",
+                    fontSize = 13.sp,
+                    color = onColor.copy(alpha = 0.8f)
+                )
+                Text(headline, fontSize = 30.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold, color = onColor)
+                secondary?.let { Text(it, fontSize = 14.sp, color = onColor) }
+                Text(monthLine, fontSize = 15.sp, color = onColor, modifier = Modifier.padding(top = 6.dp))
+            }
+            progress.provisionalUntilMs?.let {
+                Text("Estimate · settles on ${dateFormat.format(Date(it))}", fontSize = 12.sp, color = onColor.copy(alpha = 0.8f))
+            }
+            val notes = buildList {
+                if (progress.trackingOffTodayMs >= 60_000L) add("Tracking was off for ${formatSaved(progress.trackingOffTodayMs)}")
+                if (progress.pausedToday) add("Not tracked while paused")
+            }
+            if (notes.isNotEmpty()) {
+                Text(notes.joinToString(" · "), fontSize = 12.sp, color = onColor.copy(alpha = 0.8f), modifier = Modifier.padding(top = 4.dp))
+            }
+            if (!hasUsageAccess) {
+                Text(
+                    text = "Using ReclaimLife's timing only · Allow Usage access ›",
+                    fontSize = 12.sp,
+                    color = onColor,
                     modifier = Modifier
-                        .size(124.dp)
-                        .clearAndSetSemantics { contentDescription = "$used of $limit reels used" }
+                        .padding(top = 4.dp)
+                        .clickable(role = Role.Button) { runCatching { context.startActivity(usageAccessSettingsIntent()) } }
+                        .padding(vertical = 6.dp)
+                )
+            }
+            // Per app, collapsed by default; no minus signs, which read as loss.
+            if (today.byApp.size > 1) {
+                TextButton(
+                    onClick = { showApps = !showApps },
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.semantics { stateDescription = if (showApps) "Expanded" else "Collapsed" }
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = mood.emoji,
-                            fontSize = 30.sp,
-                            modifier = Modifier.clearAndSetSemantics { contentDescription = "Mood: ${mood.label}" }
-                        )
-                        Text("$used / $limit", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = onColor)
-                    }
+                    Text("By app " + if (showApps) "▴" else "▾", color = onColor)
                 }
-                Column(modifier = Modifier.padding(start = 18.dp)) {
-                    Text(
-                        text = "$title · ${mood.label}",
-                        fontSize = 13.sp,
-                        color = onColor.copy(alpha = 0.8f)
-                    )
-                    Text(
-                        text = headline,
-                        fontSize = 30.sp,
-                        lineHeight = 34.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = onColor
-                    )
-                    Text(detail, fontSize = 13.sp, color = onColor.copy(alpha = 0.8f))
-                    // The extra allowance is spelled out wherever the total appears, so a total
-                    // above the limit reads as "limit + extra you asked for", not as a bug.
-                    if (extraNote != null) {
-                        Text(
-                            text = extraNote,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier
-                                .padding(top = 8.dp)
-                                .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(50))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
+                AnimatedVisibility(visible = showApps) {
+                    Column {
+                        tracked.filter { it.packageName in today.byApp }.forEach { app ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                                Box(Modifier.size(10.dp).background(slotColor(app.slot), CircleShape))
+                                Text(
+                                    "${rememberAppLabel(app.packageName)} ${formatSaved(today.byApp[app.packageName] ?: 0L)} saved",
+                                    fontSize = 14.sp,
+                                    color = onColor,
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/** Since you started, and — from day 14 — the year. Real totals first, projections marked "≈". */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SavedDetailSheet(progress: Progress, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("Time won back", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+            DetailRow("Since you started", formatSaved(progress.sinceStartedMs))
+            DetailRow("Today", formatSaved(progress.today.totalMs))
+            DetailRow("This month", progress.monthMs?.let { "≈ ${formatProjection(it)}" } ?: "Shows up on day 3")
+            DetailRow("This year", progress.yearMs?.let { "≈ ${formatYearProjection(it)}" } ?: "Shows up on day 14")
+            flavourLine(progress)?.let {
+                Text(it, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+            }
             Text(
-                text = message,
-                fontSize = 14.sp,
-                color = onColor,
-                modifier = Modifier.padding(top = 16.dp)
+                "Measured against your usual daily time before ReclaimLife. Days when tracking was off or " +
+                    "paused don't count either way, and a heavier day counts as 0 — never less.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
 
 @Composable
-private fun ProgressRing(
-    progress: Float,
-    track: androidx.compose.ui.graphics.Color,
-    fill: androidx.compose.ui.graphics.Color,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    Box(contentAlignment = Alignment.Center, modifier = modifier) {
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val stroke = 12.dp.toPx()
-            val inset = stroke / 2
-            val arcSize = Size(size.width - stroke, size.height - stroke)
-            drawArc(track, -90f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-            if (progress > 0f) {
-                drawArc(fill, -90f, 360f * progress, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+private fun DetailRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) { }) {
+        Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** "That's about 40 books" or "about 320 long walks" — rotated weekly, only with a year of ≥ 1 day. */
+private fun flavourLine(progress: Progress): String? {
+    val year = progress.yearMs ?: return null
+    if (year < 24 * 60 * 60_000L) return null
+    val week = Calendar.getInstance().apply { timeInMillis = progress.nowMs }.get(Calendar.WEEK_OF_YEAR)
+    return if (week % 2 == 0) {
+        "That's about ${year / (6 * 60 * 60_000L)} books"
+    } else {
+        "That's about ${year / (45 * 60_000L)} long walks"
+    }
+}
+
+/** One sentence, an icon with a description, and at most one action. Announced politely when it changes. */
+@Composable
+internal fun InsightCard(insight: HomeInsight, onAction: (HomeInsight) -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite }
+    ) {
+        Row(modifier = Modifier.padding(20.dp)) {
+            Text(
+                insight.kind.emoji,
+                fontSize = 24.sp,
+                modifier = Modifier.clearAndSetSemantics { contentDescription = insight.kind.iconDescription }
+            )
+            Column(modifier = Modifier.padding(start = 14.dp)) {
+                Text(insight.text, fontSize = 15.sp)
+                if (insight.action != InsightAction.NONE && insight.actionLabel != null) {
+                    FilledTonalButton(onClick = { onAction(insight) }, modifier = Modifier.padding(top = 10.dp)) {
+                        Text(insight.actionLabel)
+                    }
+                }
             }
         }
-        content()
     }
 }
 
 /**
- * The last 24 hours in each chosen app (most-used first), and what that pace adds up to — the
- * same figures the open-pause screen shows. Without Usage access it says the numbers are partial
- * and offers it.
+ * The last 24 hours, honestly and per app: a labelled stacked bar, then a row per app with its
+ * minutes and (where counted) reels today. [hero] is for when there are no saved figures yet.
  */
 @Composable
-internal fun ScreenTimeCard(usage: LoadedUsage?, tracked: List<TrackedApp>, hasUsageAccess: Boolean) {
+internal fun Last24hCard(
+    progress: Progress?,
+    tracked: List<TrackedApp>,
+    reelsByApp: Map<String, Int>,
+    hero: Boolean,
+    hasUsageAccess: Boolean
+) {
     val context = LocalContext.current
-    val perApp = tracked.map { it to (usage?.last24hMs(it.packageName) ?: 0L) }.sortedByDescending { it.second }
+    val perApp = tracked.map { it to (progress?.last24hByApp?.get(it.packageName) ?: 0L) }
     val total = perApp.sumOf { it.second }
-    val maxMs = (perApp.maxOfOrNull { it.second } ?: 0L).coerceAtLeast(1L)
+    val colors = tracked.associate { it.packageName to slotColor(it.slot) }
+    val gap = MaterialTheme.colorScheme.surfaceContainerHigh
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        colors = CardDefaults.cardColors(
+            containerColor = if (hero) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
         shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text("Last 24 hours", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
-                text = if (usage == null) "…" else formatUsage(total),
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold
+                text = buildAnnotatedString {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = if (hero) 30.sp else 24.sp)) {
+                        append(if (progress == null) "…" else formatUsage(total))
+                    }
+                    append(" on your apps in the last 24 hours")
+                },
+                fontSize = 15.sp,
+                lineHeight = if (hero) 34.sp else 28.sp
             )
-            Text(
-                text = if (tracked.size == 1) "in ${rememberAppLabel(tracked[0].packageName)}" else "across your ${tracked.size} apps",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            perApp.forEach { (app, ms) ->
-                AppBarRow(label = rememberAppLabel(app.packageName), ms = ms, fraction = ms.toFloat() / maxMs, color = slotColor(app.slot))
-            }
-            if (total >= 60_000L) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 16.dp)) {
-                    ProjectionChip("≈ ${formatProjection(total * 30)}", "a month at this pace", Modifier.weight(1f))
-                    ProjectionChip("≈ ${formatProjection(total * 365)}", "a year at this pace", Modifier.weight(1f))
+            if (progress != null && (progress.previous24hMs > 0 || progress.usageFromSystem)) {
+                val diff = total - progress.previous24hMs
+                val (arrow, words) = when {
+                    abs(diff) < 60_000L -> "→" to "About the same as the day before"
+                    diff < 0 -> "↓" to "${formatUsage(-diff)} less than the day before"
+                    else -> "↑" to "${formatUsage(diff)} more than the day before"
+                }
+                Row(modifier = Modifier.padding(top = 4.dp).semantics(mergeDescendants = true) { }) {
+                    Text(arrow, fontSize = 14.sp, modifier = Modifier.clearAndSetSemantics { })
+                    Text(words, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
                 }
             }
-            if (!hasUsageAccess) {
+            if (total > 0) {
+                Canvas(
+                    modifier = Modifier
+                        .padding(top = 14.dp)
+                        .fillMaxWidth()
+                        .height(14.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                        .clearAndSetSemantics { }
+                ) {
+                    var x = 0f
+                    perApp.filter { it.second > 0 }.forEach { (app, ms) ->
+                        val w = size.width * ms / total
+                        drawRect(colors.getValue(app.packageName), Offset(x, 0f), Size(w, size.height))
+                        x += w
+                        // A 2dp gap keeps neighbouring segments apart when their colours are close.
+                        if (x < size.width - 1f) drawRect(gap, Offset(x - 1.dp.toPx(), 0f), Size(2.dp.toPx(), size.height))
+                    }
+                }
+            }
+            // The legend doubles as the per-app numbers, so colour is never the only label.
+            perApp.sortedByDescending { it.second }.forEach { (app, ms) ->
+                val reels = reelsByApp[app.packageName]
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 10.dp).semantics(mergeDescendants = true) { }
+                ) {
+                    Box(Modifier.size(10.dp).background(colors.getValue(app.packageName), CircleShape))
+                    Text(rememberAppLabel(app.packageName), fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                    Text(
+                        formatUsage(ms) + if (reels != null) " · $reels reels" else "",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            reelsByApp[EARLIER_TODAY_KEY]?.let { earlier ->
+                Row(modifier = Modifier.padding(top = 10.dp).semantics(mergeDescendants = true) { }) {
+                    Spacer(Modifier.width(18.dp))
+                    Text("Earlier today", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text("$earlier reels", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (hero) {
                 Text(
-                    text = "Only counts time since ReclaimLife started timing. Allow Usage access to read the full picture from Android — it stays on this phone.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 14.dp, bottom = 8.dp)
-                )
-                OutlinedButton(
-                    onClick = { runCatching { context.startActivity(usageAccessSettingsIntent()) } },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Allow Usage access") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppBarRow(label: String, ms: Long, fraction: Float, color: androidx.compose.ui.graphics.Color) {
-    Column(modifier = Modifier.padding(top = 14.dp).semantics(mergeDescendants = true) { }) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(10.dp).background(color, CircleShape))
-            Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp).weight(1f))
-            Text(formatUsage(ms), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Box(
-            modifier = Modifier
-                .padding(top = 6.dp)
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-        ) {
-            if (fraction > 0f) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(fraction.coerceIn(0.02f, 1f))
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(color)
+                    text = if (!hasUsageAccess) {
+                        "Allow Usage access to see how much time you win back ›"
+                    } else {
+                        "Time won back shows up once your phone has 3 days of history."
+                    },
+                    fontSize = 13.sp,
+                    fontWeight = if (!hasUsageAccess) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier
+                        .padding(top = 14.dp)
+                        .then(
+                            if (!hasUsageAccess) {
+                                Modifier.clickable(role = Role.Button) { runCatching { context.startActivity(usageAccessSettingsIntent()) } }
+                            } else {
+                                Modifier
+                            }
+                        )
+                        .padding(vertical = 6.dp)
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ProjectionChip(value: String, label: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -505,192 +755,14 @@ private fun DayDot(outcome: DayOutcome?, isToday: Boolean) {
             // Shape cue as well as colour, for anyone who can't tell green from red.
             Text("×", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onError)
         }
-        // No record (counter wasn't running): small and neutral, so it reads as "unknown" rather
-        // than a result — it's skipped by the streak, not counted against it.
+        // No record (counter wasn't running): a small hollow ring, so it reads as "unknown" by
+        // shape as well as colour — it's skipped by the streak, not counted against it.
         else -> Box(Modifier.size(size), contentAlignment = Alignment.Center) {
             Box(
                 Modifier
                     .size(10.dp)
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), CircleShape)
+                    .border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), CircleShape)
             )
-        }
-    }
-}
-
-/**
- * Everything you set up, in one card: how to limit, the numbers, and the swap. Dropping a limit
- * that's enforced now is a loosening, so it's confirmed (with "Keep" as the main button) and not
- * allowed while paused.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun SetupCard(
-    limitMode: LimitMode,
-    isPaused: Boolean,
-    dailyLimit: Int,
-    hourlyLimit: Int,
-    swapActivity: ReplacementActivity,
-    flashcardDeck: FlashcardDeck,
-    tracked: List<TrackedApp>,
-    onEditApps: () -> Unit,
-    onLimitModeChange: (LimitMode) -> Unit,
-    onEditDaily: () -> Unit,
-    onLowerDailyToCap: () -> Unit,
-    onEditHourly: () -> Unit,
-    onChangeSwap: () -> Unit,
-    onTrySwap: () -> Unit
-) {
-    var confirmMode by remember { mutableStateOf<LimitMode?>(null) }
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(vertical = 8.dp)) {
-            val labels = tracked.map { rememberAppLabel(it.packageName) }
-            SettingRow(
-                emoji = "📱",
-                title = "Apps to watch",
-                value = when {
-                    labels.isEmpty() -> "None"
-                    labels.size <= 2 -> labels.joinToString(" & ")
-                    else -> "${labels.take(2).joinToString(", ")} +${labels.size - 2}"
-                },
-                onClick = onEditApps
-            )
-            SetupDivider()
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                Text("Reel limit by", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                    LimitMode.entries.forEachIndexed { index, mode ->
-                        val loosens = limitMode.loosensTo(mode)
-                        SegmentedButton(
-                            selected = mode == limitMode,
-                            onClick = {
-                                when {
-                                    mode == limitMode -> Unit
-                                    loosens -> confirmMode = mode
-                                    else -> onLimitModeChange(mode)
-                                }
-                            },
-                            enabled = mode == limitMode || !(isPaused && loosens),
-                            shape = SegmentedButtonDefaults.itemShape(index, LimitMode.entries.size)
-                        ) { Text(mode.label) }
-                    }
-                }
-                Text(
-                    text = when (limitMode) {
-                        LimitMode.DAILY -> "One cap for the whole day."
-                        LimitMode.HOURLY -> "A 2-minute break whenever an hour's reels run out; no daily cap."
-                        LimitMode.BOTH -> "A daily cap, plus a 2-minute break whenever an hour's reels run out."
-                    } + if (isPaused && limitMode != LimitMode.BOTH) " While paused you can only add a limit." else "",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-            if (limitMode.usesDaily) {
-                SetupDivider()
-                SettingRow(emoji = "☀️", title = "Daily limit", value = "$dailyLimit reels", onClick = onEditDaily)
-                // Limits saved above the cap (from the old 1–1000 slider) are kept, never forced
-                // down — just a gentle, one-tap nudge toward the range the picker now offers.
-                if (dailyLimit > MAX_DAILY_REEL_LIMIT) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 56.dp, end = 8.dp)) {
-                        Text(
-                            text = "Most people start at $MAX_DAILY_REEL_LIMIT or under.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = onLowerDailyToCap) { Text("Lower to $MAX_DAILY_REEL_LIMIT") }
-                    }
-                }
-            }
-            if (limitMode.usesHourly) {
-                SetupDivider()
-                SettingRow(emoji = "⏱️", title = "Hourly limit", value = "$hourlyLimit reels / hour", onClick = onEditHourly)
-            }
-            SetupDivider()
-            SettingRow(
-                emoji = swapActivity.emoji,
-                title = "2-minute swap",
-                value = swapActivity.label + if (swapActivity == ReplacementActivity.FLASHCARDS) " · ${flashcardDeck.label}" else "",
-                onClick = onChangeSwap,
-                trailing = { TextButton(onClick = onTrySwap) { Text("Try it") } }
-            )
-        }
-    }
-
-    confirmMode?.let { target ->
-        val dropped = if (limitMode.usesDaily && !target.usesDaily) "daily" else "hourly"
-        AlertDialog(
-            onDismissRequest = { confirmMode = null },
-            title = { Text("Drop the $dropped limit?") },
-            text = {
-                Text(
-                    if (dropped == "daily") {
-                        "Without a daily limit, the hours can quietly add up. You can switch back anytime."
-                    } else {
-                        "The hourly limit helps keep one sitting from running long. You can switch back anytime."
-                    }
-                )
-            },
-            confirmButton = {
-                Button(onClick = { confirmMode = null }) { Text("Keep ${limitMode.label.lowercase()}") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    confirmMode = null
-                    onLimitModeChange(target)
-                }) {
-                    Text("Switch")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun SetupDivider() {
-    HorizontalDivider(
-        color = MaterialTheme.colorScheme.outlineVariant,
-        modifier = Modifier.padding(horizontal = 20.dp)
-    )
-}
-
-/** A tappable settings row: emoji tile, title over value, and a chevron (or [trailing]). */
-@Composable
-private fun SettingRow(
-    emoji: String,
-    title: String,
-    value: String,
-    onClick: () -> Unit,
-    trailing: (@Composable () -> Unit)? = null
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClickLabel = "Change $title", onClick = onClick)
-            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(40.dp)
-                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp))
-        ) {
-            Text(emoji, fontSize = 20.sp, modifier = Modifier.clearAndSetSemantics { })
-        }
-        Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
-            Text(title, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-        }
-        if (trailing != null) {
-            trailing()
-        } else {
-            Text("›", fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(24.dp), textAlign = TextAlign.Center)
         }
     }
 }

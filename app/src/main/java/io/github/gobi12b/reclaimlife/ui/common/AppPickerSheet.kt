@@ -91,10 +91,10 @@ fun AppPickerSheet(current: List<TrackedApp>, onDismiss: () -> Unit, onSave: (Li
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 16.dp)
         ) {
-            Text("Apps to watch", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+            Text("Your apps", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
             Text(
-                "Each one gets a moment to pause when you open it, and shows up in your stats. " +
-                    "Reels are counted in Instagram and YouTube only.",
+                "Each one shows up in your stats, and can get Pause before opening. " +
+                    "Reels are counted in Instagram and YouTube only. Removing an app keeps its history.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
@@ -156,11 +156,11 @@ private fun AppRow(item: InstalledApp, checked: Boolean, enabled: Boolean, onTog
         }
         Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
             Text(item.label, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            if (TargetApps.countsReels(item.packageName)) {
-                Text("Pause, stats and reel counting", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-            } else if (item.suggested) {
-                Text("Popular feed app", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Text(
+                if (TargetApps.countsReels(item.packageName)) "Reels and time" else "Time only",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
     }

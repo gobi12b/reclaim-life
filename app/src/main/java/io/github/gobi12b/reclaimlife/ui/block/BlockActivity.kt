@@ -55,6 +55,7 @@ import io.github.gobi12b.reclaimlife.data.ReplacementActivity
 import io.github.gobi12b.reclaimlife.data.formatPauseRemaining
 import io.github.gobi12b.reclaimlife.ui.common.OwnScreens
 import io.github.gobi12b.reclaimlife.ui.common.SproutBadge
+import io.github.gobi12b.reclaimlife.ui.common.perAppReelsLine
 import io.github.gobi12b.reclaimlife.ui.replacement.SwapSession
 import io.github.gobi12b.reclaimlife.ui.theme.ReclaimLifeTheme
 import kotlinx.coroutines.delay
@@ -172,6 +173,7 @@ private fun BlockFlow(
     val attemptsToday by app.reelUsageRepository.todayExtraAttempts.collectAsState(initial = 0)
     val todayCount by app.reelUsageRepository.todayCount.collectAsState(initial = dailyLimit)
     val extraAllowance by app.reelUsageRepository.todayExtraAllowance.collectAsState(initial = 0)
+    val countsByApp by app.reelUsageRepository.todayCountsByApp.collectAsState(initial = emptyMap())
 
     fun grantAndContinue(amount: Int) {
         scope.launch {
@@ -234,6 +236,7 @@ private fun BlockFlow(
                 dailyLimit = dailyLimit,
                 todayCount = todayCount,
                 extraAllowance = extraAllowance,
+                perAppLine = perAppReelsLine(context, countsByApp),
                 name = name,
                 swapFinished = swapFinished,
                 activity = activity,
@@ -287,6 +290,7 @@ private fun DailySummary(
     dailyLimit: Int,
     todayCount: Int,
     extraAllowance: Int,
+    perAppLine: String?,
     name: String,
     swapFinished: Boolean,
     activity: ReplacementActivity,
@@ -313,6 +317,16 @@ private fun DailySummary(
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // The same split as Home and Limits, so the total never looks like it came from nowhere.
+        if (perAppLine != null) {
+            Text(
+                text = perAppLine,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
         Text(
             text = if (swapFinished) "Nice — that was 2 minutes for you." else "That's your reels for today.",
             fontSize = 26.sp,
