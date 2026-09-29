@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -115,8 +116,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { settings.completeTreeIntro(name, System.currentTimeMillis()) }
     }
 
-    /** Milestones already revealed; Home reveals any earned one not in here, once. */
-    val seenKeepsakes: StateFlow<Set<String>?> = settings.seenKeepsakes.map<Set<String>, Set<String>?> { it }.state(null)
+    /**
+     * Milestones already revealed; Home reveals any earned one not in here, once. The watering can
+     * waits for the next launch rather than landing on top of planting the tree, so it counts as
+     * seen for the launch that planted it.
+     */
+    val seenKeepsakes: StateFlow<Set<String>?> = combine(
+        settings.seenKeepsakes,
+        flow { emit(settings.treeIntroSeen.first()) }
+    ) { seen, plantedBeforeThisLaunch ->
+        if (plantedBeforeThisLaunch) seen else seen + Keepsake.WATERING_CAN.name
+    }.map<Set<String>, Set<String>?> { it }.state(null)
 
     fun markKeepsakeSeen(k: Keepsake) {
         viewModelScope.launch { settings.markKeepsakeSeen(k.name) }
